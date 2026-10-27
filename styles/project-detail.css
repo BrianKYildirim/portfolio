@@ -800,6 +800,17 @@ input.demo-input {
   letter-spacing: .08em;
 }
 
+.pd-src code {
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.pd-code figcaption .pd-src {
+  margin-top: 0;
+  padding-top: 0;
+}
+
 .pd-steps {
   counter-reset: pd-step;
   display: grid;

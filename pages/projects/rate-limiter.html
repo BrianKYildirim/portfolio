@@ -100,8 +100,9 @@
         saturate at capacity instead of wrapping.</p>
     </div>
     <figure class="pd-code">
-      <figcaption><span>src/inproc_rate_limiter.cpp · consume()</span><a
-          href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/main/src/inproc_rate_limiter.cpp#L519-L533"
+      <figcaption><span>src/inproc_rate_limiter.cpp · consume()</span>
+        <span class="pd-src">as of <code>6d436a8</code></span><a
+          href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/6d436a88018b207211ae120fee4df1dc703c5dfe/src/inproc_rate_limiter.cpp#L548-L562"
           target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
       <pre tabindex="0"><code>const uint64_t cap = std::min(limit.capacity, kMaxCapacity) * kUnit;
 const uint64_t rate = limit.refill_per_sec;
@@ -116,7 +117,7 @@ if (now &gt; last) {
 if (tokens &gt;= kUnit) {
     tokens_io = tokens - kUnit;
     last = at;
-    return Out::allowed(tokens_io);
+    return Out::allowed(tokens_io, cap, rate);
 }</code></pre>
     </figure>
   </div>
