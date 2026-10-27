@@ -15,7 +15,8 @@
     </div>
     <div>
       <dt>Endpoints</dt>
-      <dd><code>POST /quality</code>, <code>GET /health</code>, <code>/version</code>, <code>/metrics</code></dd>
+      <dd><code>POST /quality</code>, <code>POST /quality/diagnostics</code>, <code>GET /quality/config</code>,
+        <code>GET /health</code>, <code>GET /version</code>, <code>GET /metrics</code></dd>
     </div>
     <div>
       <dt>Stack</dt>
@@ -23,7 +24,7 @@
     </div>
     <div>
       <dt>Limits</dt>
-      <dd>6 MB upload, images scaled to 1600 px on the long side</dd>
+      <dd>6 MB upload, 25 MP pixel limit checked before decoding, images scaled to 1600 px on the long side</dd>
     </div>
   </dl>
 </section>
@@ -73,14 +74,15 @@
   <figure class="pd-diagram">
     <div class="pd-flow">
       <div class="pd-node">validate<small>type, ≤ 6 MB</small></div><span class="pd-edge" aria-hidden="true"></span>
-      <div class="pd-node">normalize<small>EXIF, ≤ 1600 px Lanczos</small></div><span class="pd-edge"
+      <div class="pd-node">normalize<small>≤ 25 MP before decode, EXIF, ≤ 1600 px Lanczos</small></div><span class="pd-edge"
         aria-hidden="true"></span>
       <div class="pd-node">grayscale</div><span class="pd-edge" aria-hidden="true"></span>
       <div class="pd-node is-focus">score<small>variance of Laplacian, mean</small></div><span class="pd-edge"
         aria-hidden="true"></span>
       <div class="pd-node">decide<small>thresholds</small></div>
     </div>
-    <figcaption>Normalizing first means the same photo scores the same whether it arrives rotated, huge or small.
+    <figcaption>Normalizing first means a rotated photo scores the same as an upright one, and a huge photo is scored
+      at no more than 1600 px on the long side.
     </figcaption>
   </figure>
   <div class="pd-sub">
@@ -153,8 +155,8 @@ def assess(gray: np.ndarray, thr: Thresholds) -&gt; dict:
     </div>
     <div>
       <dt>Decision</dt>
-      <dd><code>scripts/tune_blur.py</code> scores a folder of representative images with the service's own pipeline and
-        suggests <code>BLUR_MIN</code> with Otsu's method over the log<sub>10</sub> of the blur scores, plus brightness
+      <dd><code>scripts/tune_blur.py</code> scores a folder of representative images
+        with a copy of the service's preprocessing and scoring and suggests <code>BLUR_MIN</code> with Otsu's method over the log<sub>10</sub> of the blur scores, plus brightness
         bounds from the central 95% of brightness values.</dd>
     </div>
     <div>
@@ -168,12 +170,20 @@ def assess(gray: np.ndarray, thr: Thresholds) -&gt; dict:
 
 <section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
-  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Fast enough to sit in an upload path</h3>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">What has been measured</h3>
   <ul class="pd-metrics">
-    <li><span class="v">100+</span><span class="l">requests per second</span><span class="pd-src">Site copy</span></li>
-    <li><span class="v">Live</span><span class="l">stage timings measured by your browser in the demo above</span><span
-        class="pd-src">Live in demo</span></li>
+    <li><span class="v">Live</span><span class="l">stage timings of the JavaScript port, measured by your browser in the
+        demo above</span><span class="pd-src">Live in demo</span></li>
   </ul>
+  <div class="pd-prose">
+    <p>The service's benchmark script, <code>scripts/bench_quality.py</code>, compares the code with an older version
+      over real HTTP: it starts one single-worker server per variant and reports the paired difference per round of
+      requests. It also times the image pipeline in-process. Sustained throughput under load has not been measured.
+      The README section <a
+        href="https://github.com/BrianKYildirim/image-quality-gate/blob/ad6a3b5b63de6d749141bfecabae28c4de0b12b7/README.md#performance"
+        target="_blank" rel="noopener noreferrer">Performance</a> (as of <code>ad6a3b5</code>) describes the method
+      and the machine, with one example run.</p>
+  </div>
 </section>
 
 <section class="pd-section" id="pd-lessons" aria-labelledby="pd-lessons-h" data-toc="Lessons learned">
