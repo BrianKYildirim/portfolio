@@ -23,8 +23,11 @@
         </div>
 
         <div class="projects-page-grid">
-            <article class="projects-page-card featured-project" data-category="full-stack">
-                <img class="projects-page-image" src="../static/strivoimg1.jpg" alt="StrivoAI project">
+            <article class="projects-page-card featured-project" data-category="full-stack" data-project="strivoai">
+                <div class="project-media">
+                    <img class="projects-page-image" src="../static/strivoimg1.jpg" alt="StrivoAI project">
+                    <span class="project-expand" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.5 6.5M2.5 13.5l4-4"/></svg></span>
+                </div>
                 <div class="projects-page-info">
                     <span class="project-featured mono">FEATURED</span>
 
@@ -33,7 +36,7 @@
                         <span class="project-stat">62% faster</span>
                     </div>
 
-                    <h2>StrivoAI: Career Intelligence Platform</h2>
+                    <h2><button type="button" class="project-open" aria-haspopup="dialog" aria-controls="project-detail" aria-expanded="false">StrivoAI: Career Intelligence Platform</button></h2>
                     <p>AI resume analysis and five career workflows, cut from ~110s to ~42s per analysis at under $0.10
                         each.</p>
                     <span class="project-tech mono">TypeScript · React · Supabase · PostgreSQL · Stripe</span>
@@ -47,15 +50,18 @@
                 </div>
             </article>
 
-            <article class="projects-page-card" data-category="full-stack">
-                <img class="projects-page-image" src="../static/minecraft-enchant1.jpeg"
-                    alt="Minecraft Enchantment Calculator">
+            <article class="projects-page-card" data-category="full-stack" data-project="enchantment-calculator">
+                <div class="project-media">
+                    <img class="projects-page-image" src="../static/minecraft-enchant1.jpeg"
+                        alt="Minecraft Enchantment Calculator">
+                    <span class="project-expand" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.5 6.5M2.5 13.5l4-4"/></svg></span>
+                </div>
                 <div class="projects-page-info">
                     <div class="project-meta mono">
                         <span>May – Aug 2025</span>
                         <span class="project-stat">2.8M+ impressions</span>
                     </div>
-                    <h2>Minecraft Enchantment Calculator</h2>
+                    <h2><button type="button" class="project-open" aria-haspopup="dialog" aria-controls="project-detail" aria-expanded="false">Minecraft Enchantment Calculator</button></h2>
                     <p>A memoized recursive optimizer that finds the cheapest enchantment order in ~20 ms.</p>
                     <span class="project-tech mono">Python · Flask · JavaScript · Tailwind</span>
 
@@ -68,14 +74,17 @@
                 </div>
             </article>
 
-            <article class="projects-page-card" data-category="systems">
-                <img class="projects-page-image" src="../static/ratelimit.jpg" alt="Rate Limiter Library">
+            <article class="projects-page-card" data-category="systems" data-project="rate-limiter">
+                <div class="project-media">
+                    <img class="projects-page-image" src="../static/ratelimit.jpg" alt="Rate Limiter Library">
+                    <span class="project-expand" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.5 6.5M2.5 13.5l4-4"/></svg></span>
+                </div>
                 <div class="projects-page-info">
                     <div class="project-meta mono">
                         <span>Aug – Sep 2025</span>
                         <span class="project-stat">75.7M ops/s</span>
                     </div>
-                    <h2>Rate Limiter Library</h2>
+                    <h2><button type="button" class="project-open" aria-haspopup="dialog" aria-controls="project-detail" aria-expanded="false">Rate Limiter Library</button></h2>
                     <p>A sharded token-bucket limiter, achieving 40ns processing latency (up to 375× faster than Redis).
                     </p>
                     <span class="project-tech mono">C++ · C API · CMake · GoogleTest</span>
@@ -88,14 +97,17 @@
 
             </article>
 
-            <article class="projects-page-card" data-category="backend">
-                <img class="projects-page-image" src="../static/imgqual1.jpeg" alt="Image Quality Gate">
+            <article class="projects-page-card" data-category="backend" data-project="image-quality-gate">
+                <div class="project-media">
+                    <img class="projects-page-image" src="../static/imgqual1.jpeg" alt="Image Quality Gate">
+                    <span class="project-expand" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.5 6.5M2.5 13.5l4-4"/></svg></span>
+                </div>
                 <div class="projects-page-info">
                     <div class="project-meta mono">
                         <span>May – Aug 2025</span>
                         <span class="project-stat">100+ req/s</span>
                     </div>
-                    <h2>Image Quality Gate</h2>
+                    <h2><button type="button" class="project-open" aria-haspopup="dialog" aria-controls="project-detail" aria-expanded="false">Image Quality Gate</button></h2>
                     <p>A REST microservice that rejects blurry or badly lit uploads.</p>
                     <span class="project-tech mono">Python · FastAPI · OpenCV · Docker</span>
 
@@ -106,14 +118,17 @@
                 </div>
             </article>
 
-            <article class="projects-page-card" data-category="systems">
-                <img class="projects-page-image" src="../static/tcp1.jpeg" alt="Concurrent Key-Value Server">
+            <article class="projects-page-card" data-category="systems" data-project="kv-server">
+                <div class="project-media">
+                    <img class="projects-page-image" src="../static/tcp1.jpeg" alt="Concurrent Key-Value Server">
+                    <span class="project-expand" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.5 6.5M2.5 13.5l4-4"/></svg></span>
+                </div>
                 <div class="projects-page-info">
                     <div class="project-meta mono">
                         <span>Mar – Apr 2025</span>
                         <span class="project-stat">Custom protocol</span>
                     </div>
-                    <h2>Concurrent Key-Value Server</h2>
+                    <h2><button type="button" class="project-open" aria-haspopup="dialog" aria-controls="project-detail" aria-expanded="false">Concurrent Key-Value Server</button></h2>
                     <p>A multithreaded TCP key-value store with persistence.</p>
                     <span class="project-tech mono">Python · TCP Sockets · Threading</span>
 

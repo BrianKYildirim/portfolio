@@ -1,0 +1,153 @@
+<section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">Six career tools on one analysis pipeline</h3>
+  <div class="pd-prose">
+    <p>StrivoAI is an AI career platform: resume analysis, LinkedIn grading, Career Compass, Recruiting Lens, interview
+      prep and job tracking. Each tool asks a different question, but they all run on the same pipeline: the browser
+      submits work, a Supabase Edge Function records it as a job, model calls run in parallel, and the client polls for
+      the result.</p>
+    <p data-placeholder="Why you built StrivoAI: the moment or problem that started it, in 1–2 first-person sentences.">
+      It is built for students and early-career engineers who want concrete, role-specific feedback on their materials
+      instead of generic advice.</p>
+  </div>
+  <dl class="pd-facts">
+    <div>
+      <dt>Timeline</dt>
+      <dd>Oct 2025 – Jun 2026</dd>
+    </div>
+    <div data-placeholder="Your role (solo founder/engineer? team size?) and what you owned.">
+      <dt>Role</dt>
+      <dd>Design, frontend, backend and infrastructure</dd>
+    </div>
+    <div>
+      <dt>Stack</dt>
+      <dd>TypeScript, React, Vite, Supabase (Postgres, Edge Functions, row-level security), Stripe</dd>
+    </div>
+    <div>
+      <dt>Status</dt>
+      <dd>Live at <a href="https://strivoai.net/" target="_blank" rel="noopener noreferrer">strivoai.net</a></dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-how-it-works" aria-labelledby="pd-how-it-works-h" data-toc="How it works">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">02</span> How it works</p>
+  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Long analyses run as jobs, not as one long request</h3>
+  <figure class="pd-diagram">
+    <div class="pd-flow">
+      <div class="pd-node">React SPA<small>TypeScript · Vite</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">submit-*-analysis-job<small>Edge Function</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">job row<small>Postgres · RLS</small></div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node is-focus">parallel model calls<small>structured output</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">client polls<small>get-analysis-job-status</small></div>
+    </div>
+    <figcaption>The browser never holds a request open for the whole analysis: it gets a job id back and polls until the
+      job is done.</figcaption>
+  </figure>
+  <div class="pd-sub">
+    <h4 class="pd-h4">A job that survives a closed tab</h4>
+    <div class="pd-prose">
+      <p>A <code>submit-*-analysis-job</code> function validates the request, inserts a <code>pending</code> row into
+        <code>analysis_jobs</code>, starts the matching <code>process-*-analysis-job</code> worker and answers
+        <code>202</code> with the job id and a 1.5-second poll interval. If the same work is already
+        <code>pending</code>, <code>retrying</code> or <code>processing</code>, it returns that job instead of starting
+        a second one, so a double click or a reload doesn't start duplicate work.</p>
+    </div>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Parallel calls instead of one oversized request</h4>
+    <div class="pd-prose">
+      <p>Each feature splits its analysis into independent model calls that run concurrently, and each call returns
+        structured output (a fixed JSON shape) rather than free text. Wall-clock time is set by the slowest call rather
+        than by the sum of all of them.</p>
+    </div>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Domain-aware, tier-aware, OCR when needed</h4>
+    <div class="pd-prose">
+      <ul>
+        <li
+          data-placeholder="Explain concretely what 'domain-aware' means in StrivoAI: which signals shape the analysis, and in which features.">
+          Analyses are framed by the user's current goal, such as Software Engineering · Internship, rather than by
+          generic resume rules.</li>
+        <li>Stripe subscription tiers are enforced twice: the frontend hides what a plan can't use, and the Edge
+          Functions check the tier again on the server.</li>
+        <li>When a PDF has no usable text layer, an <code>ocr-pdf</code> function extracts the text so scanned resumes
+          still work.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-challenge" aria-labelledby="pd-challenge-h" data-toc="Engineering challenge">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">03</span> Engineering challenge</p>
+  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">Cutting an analysis from ~110 s to ~42 s</h3>
+  <dl class="pd-decision">
+    <div>
+      <dt>The problem</dt>
+      <dd>A full analysis took about 110 seconds: too long to hold one HTTP request open, and too long to watch a
+        spinner.</dd>
+    </div>
+    <div data-placeholder="Replace with the options you actually weighed and why each lost (or won).">
+      <dt>Options considered</dt>
+      <dd>
+        <ul>
+          <li><b>One synchronous request.</b> Simplest, but the whole analysis rides on one connection staying open.
+          </li>
+          <li><b>One large streamed response.</b> Shows progress sooner, but the total time stays the same.</li>
+          <li><b>Jobs plus parallel structured calls.</b> More moving parts: a jobs table, a worker and polling. <span
+              class="pd-chosen">✓ chosen</span></li>
+        </ul>
+      </dd>
+    </div>
+    <div>
+      <dt>Decision</dt>
+      <dd>Run every analysis as a job recorded in Postgres, split it into independent model calls that run in parallel,
+        and let the client poll for the result.</dd>
+    </div>
+    <div>
+      <dt>Why</dt>
+      <dd>Parallel calls bound the latency by the slowest call instead of the sum; the job row outlives a dropped
+        connection or a closed tab; and polling works through any proxy or network.</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">04</span> Results</p>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Faster and cheap enough to offer broadly</h3>
+  <ul class="pd-metrics">
+    <li><span class="v">62%</span><span class="l">faster per analysis (~110 s → ~42 s)</span><span class="pd-src">Site
+        copy</span></li>
+    <li><span class="v">&lt; $0.10</span><span class="l">cost per analysis</span><span class="pd-src">Site copy</span>
+    </li>
+  </ul>
+  <div class="pd-prose">
+    <p data-placeholder="Add usage you can share (users, analyses run, conversion to paid), or delete this paragraph.">
+      StrivoAI is live and taking real analyses at strivoai.net.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-lessons" aria-labelledby="pd-lessons-h" data-toc="Lessons learned">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Lessons learned</p>
+  <h3 class="pd-h3" id="pd-lessons-h" tabindex="-1">Latency is an architecture decision</h3>
+  <div class="pd-prose"
+    data-placeholder="2–3 lessons in your own voice: what surprised you, what you'd do differently, what you'd keep.">
+    <p>Latency was set by the shape of the work: independent calls running in parallel finish when the slowest one does,
+      and a job the client can come back to removes the need to keep one connection alive.</p>
+    <p>Checking plans on the server as well as in the UI means the interface is never the only thing standing between a
+      free account and a paid feature.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-next" aria-labelledby="pd-next-h" data-toc="What's next">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">06</span> What's next</p>
+  <h3 class="pd-h3" id="pd-next-h" tabindex="-1">Where StrivoAI goes from here</h3>
+  <div class="pd-prose"
+    data-placeholder="What you plan to build next, and why: features, scale, or what you'd measure.">
+    <p>Next steps are still being decided.</p>
+  </div>
+</section>

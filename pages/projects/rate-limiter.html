@@ -1,0 +1,227 @@
+<section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">A per-key token bucket that stays fast under contention</h3>
+  <div class="pd-prose">
+    <p>An in-process rate limiter for C++20. Every key, such as a user id or an IP address, gets its own token bucket
+      with a capacity and a refill rate. <code>allow(key, limit)</code> takes one token if there is one and returns
+      whether the call is allowed, how many whole tokens remain, and how many milliseconds until the next token if it
+      isn't.</p>
+    <p>It is thread-safe with linearizable per-key decisions, ships a C API and an optional JNI bridge for Java, and is
+      covered by GoogleTest unit, concurrency and differential tests plus Google Benchmark suites.</p>
+  </div>
+  <dl class="pd-facts">
+    <div>
+      <dt>Timeline</dt>
+      <dd>Aug – Sep 2025</dd>
+    </div>
+    <div>
+      <dt>Language</dt>
+      <dd>C++20, with C and JNI bindings</dd>
+    </div>
+    <div>
+      <dt>API</dt>
+      <dd><code>allow</code>, <code>try_acquire</code>, <code>evict_idle</code>, <code>size</code>, <code>clear</code>
+      </dd>
+    </div>
+    <div>
+      <dt>Build</dt>
+      <dd>CMake package, pkg-config, sanitizer builds</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-demo" data-toc="Try it" aria-labelledby="pd-demo-h">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">02</span> Try it</p>
+  <div class="demo" data-demo="ratelimit">
+    <div class="demo-head">
+      <div>
+        <h3 class="demo-title" id="pd-demo-h" tabindex="-1">Rate Limiter Playground</h3>
+        <p class="demo-desc">Drive the library's token-bucket decision with simulated clients and watch each key's
+          bucket drain and refill.</p>
+      </div>
+      <span class="demo-pill">Runs in your browser</span>
+    </div>
+    <div class="fidelity is-sim">
+      <span class="fidelity-label">Real logic · simulated clock</span>
+      <p>A line-for-line JavaScript port of the library's token-bucket decision (<code>consume()</code>: integer
+        nanotoken refill, new keys start full, <code>remaining</code> and <code>reset_ms</code> exactly as
+        <code>allow()</code> returns them), checked against the library's unit tests. Time and traffic are simulated;
+        nothing here measures native speed.</p>
+      <details>
+        <summary>What's ported</summary>
+        <ul>
+          <li>Ported from <code>src/inproc_rate_limiter.cpp</code>: <code>consume()</code>, <code>Full::allowed</code> /
+            <code>Full::denied</code>, <code>kUnit</code>, <code>kMaxCapacity</code>, <code>kQuietNs</code>, and "new
+            keys start full" from <code>decide_locked</code>. <code>Limit</code> and <code>Decision</code> from
+            <code>include/ratelimit/types.h</code>. 64-bit unsigned arithmetic is emulated with BigInt so overflow and
+            saturation behave like the C++.</li>
+          <li>Verified with the 16 deterministic tests of the <code>Core</code> suite in
+            <code>tests/test_core.cpp</code>, transcribed to JavaScript.</li>
+          <li>Not ported: sharding, the lock-free hash table, epoch-based reclamation, <code>FastClock</code> and
+            <code>evict_idle()</code>. Keys live in a JavaScript <code>Map</code>.</li>
+          <li>Simulated: the clock (advanced by animation frames × speed) and the traffic (steady or seeded Poisson
+            arrivals). The bucket level shown between calls is computed for display; the library itself refills only
+            when <code>allow()</code> runs.</li>
+        </ul>
+      </details>
+    </div>
+    <div class="demo-mount"></div>
+    <div class="demo-status"><span role="status" aria-live="polite"></span><button class="btn-ghost"
+        type="button">Reset</button></div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-how-it-works" aria-labelledby="pd-how-it-works-h" data-toc="How it works">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">03</span> How it works</p>
+  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">One hash, one cache line, one short lock per decision</h3>
+  <figure class="pd-diagram">
+    <div class="pd-flow">
+      <div class="pd-node">hash(key)<small>wyhash, per-limiter seed</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">shard<small>hash bits 32+, 128 by default</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">slot<small>linear probing, one 64-byte slot per cache line, keys ≤ 28 bytes inline</small>
+      </div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">per-slot version lock<small>spin with exponential backoff, then yield</small></div><span
+        class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node is-focus">refill + take<small>integer nanotokens</small></div>
+    </div>
+    <figcaption>A decision touches one key's cache line: the shard and slot come from one hash, and only that slot is
+      locked.</figcaption>
+  </figure>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Exact refill without floating point</h4>
+    <div class="pd-prose">
+      <p>Balances are stored in nanotokens (10<sup>9</sup> per token). Refilling for <code>dt</code> nanoseconds at
+        <code>rate</code> tokens per second then adds exactly <code>dt × rate</code> nanotokens: one 64-bit multiply
+        with an overflow check, no division and no rounding drift between calls. Long idle periods and huge rates
+        saturate at capacity instead of wrapping.</p>
+    </div>
+    <figure class="pd-code">
+      <figcaption><span>src/inproc_rate_limiter.cpp · consume()</span><a
+          href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/main/src/inproc_rate_limiter.cpp#L519-L533"
+          target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
+      <pre tabindex="0"><code>const uint64_t cap = std::min(limit.capacity, kMaxCapacity) * kUnit;
+const uint64_t rate = limit.refill_per_sec;
+uint64_t tokens = std::min(tokens_io, cap); // capacity may have been lowered
+uint64_t at = last;
+if (now &gt; last) {
+    uint64_t add;
+    if (mul_overflow(now - last, rate, &amp;add) || add &gt;= cap - tokens) tokens = cap;
+    else tokens += add;
+    at = now;
+}
+if (tokens &gt;= kUnit) {
+    tokens_io = tokens - kUnit;
+    last = at;
+    return Out::allowed(tokens_io);
+}</code></pre>
+    </figure>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Lookups without a shared lock</h4>
+    <div class="pd-prose">
+      <p>Each shard publishes its hash table as a single word, so a lookup reads the table without taking any lock and
+        can prefetch the key's slot before the clock is read. Inserts, growth and eviction take the shard's mutex and
+        build a new table; the old one is freed by epoch-based reclamation only once no reader can still be inside it.
+      </p>
+    </div>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Denying without writing</h4>
+    <div class="pd-prose">
+      <p>A denial less than 1 ms after the key's recorded time changes nothing, so a thread that recently saw a key
+        denied decides from a seqlock snapshot without taking the slot's lock. A flood of requests for one over-limit
+        key then leaves its cache line shared by every core instead of bouncing between them. Refill is linear and
+        exact, so skipping those writes changes no later verdict.</p>
+    </div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-challenge" aria-labelledby="pd-challenge-h" data-toc="Engineering challenge">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">04</span> Engineering challenge</p>
+  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">A hot over-limit key made every core write the same cache line
+  </h3>
+  <dl class="pd-decision">
+    <div>
+      <dt>The problem</dt>
+      <dd>When many threads hit one key that is over its limit, every denial still wrote the key's balance and
+        timestamp. Each write pulls the cache line into one core exclusively, so the line bounced between cores and a
+        flood of requests for one key could not scale across them.</dd>
+    </div>
+    <div>
+      <dt>Options considered</dt>
+      <dd>
+        <ul>
+          <li><b><code>std::mutex</code> per shard.</b> Simple and correct, but every decision for a hot key serializes
+            on one mutex, and every denial still writes.</li>
+          <li><b>Write-intent prefetch.</b> Fetch the slot ready for writing before locking. Measured: it cut hot-key
+            throughput by two thirds, because it takes the line away from every other core.</li>
+          <li><b>Per-slot spinlock + read-only denials.</b> A version lock inside each 64-byte slot, held for a few
+            dozen instructions, and quiet denials decided from a snapshot. <span class="pd-chosen">✓ chosen</span></li>
+        </ul>
+      </dd>
+    </div>
+    <div>
+      <dt>Decision</dt>
+      <dd>Lock only the key's own slot, spin briefly with exponential backoff before yielding, and deny over-limit keys
+        without writing when nothing would change.</dd>
+    </div>
+    <div
+      data-placeholder="The README measured the per-shard spinlock that preceded per-slot locks: confirm the 2.7× still holds for the current design, or re-run and update.">
+      <dt>Why</dt>
+      <dd>In the README's benchmarks the test-and-test-and-set spinlock was as fast as or faster than
+        <code>std::mutex</code> at every thread count tested (1 to 16 threads on 8 hardware threads), and up to 2.7×
+        faster on a contended hot key.</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Tens of millions of decisions per second</h3>
+  <ul class="pd-metrics">
+    <li><span class="v">75.7M</span><span class="l">operations per second</span><span class="pd-src">Site copy · native
+        benchmark</span></li>
+    <li><span class="v">40 ns</span><span class="l">processing latency per decision</span><span class="pd-src">Site copy
+        · native benchmark</span></li>
+    <li><span class="v">375×</span><span class="l">faster than Redis</span><span class="pd-src">Site copy · native
+        benchmark</span></li>
+    <li><span class="v">2.7×</span><span class="l">spinlock vs <code>std::mutex</code> on a contended hot
+        key</span><span class="pd-src">README benchmark</span></li>
+  </ul>
+  <div class="pd-prose">
+    <p
+      data-placeholder="Benchmark conditions for 75.7M ops/s, 40 ns and 375×: CPU, thread count, workload (Hot/Uniform, key count), build flags, and how Redis was measured.">
+      These figures come from native benchmarks of the C++ library. The playground above runs the decision logic in
+      JavaScript on a simulated clock and measures nothing about native speed.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-lessons" aria-labelledby="pd-lessons-h" data-toc="Lessons learned">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">06</span> Lessons learned</p>
+  <h3 class="pd-h3" id="pd-lessons-h" tabindex="-1">Measure the cache line, not the instruction count</h3>
+  <div class="pd-prose"
+    data-placeholder="2–3 lessons in your own voice. The drafts below are technically accurate; keep, rewrite or replace them.">
+    <p>An optimization that looks free can be a loss: a write-intent prefetch seems ideal for a slot that is about to be
+      written, and it measured two thirds slower on a hot key.</p>
+    <p>An earlier Q32.32 fixed-point balance overflowed for capacities above 2<sup>32</sup>; integer nanotokens with
+      explicit overflow checks removed that whole class of bug, and a test pins it.</p>
+    <p>A differential test against an independent model (a <code>std::map</code> and 128-bit arithmetic) checks the
+      optimized engine over random operations, including clocks that go backwards.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-next" aria-labelledby="pd-next-h" data-toc="What's next">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">07</span> What's next</p>
+  <h3 class="pd-h3" id="pd-next-h" tabindex="-1">From one process to many</h3>
+  <div class="pd-prose"
+    data-placeholder="Which of these you actually plan to do, in your own words, or replace with your real plans.">
+    <ul>
+      <li>The limiter is in-process: buckets aren't shared across processes or machines. A distributed tier in front of
+        a shared store would be the next step for multi-instance services.</li>
+      <li>Eviction is manual today (<code>evict_idle()</code>); a background sweeper would bound memory automatically.
+      </li>
+    </ul>
+  </div>
+</section>

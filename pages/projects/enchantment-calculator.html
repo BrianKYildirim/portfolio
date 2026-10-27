@@ -1,0 +1,169 @@
+<section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">The cheapest anvil order for any set of enchantments</h3>
+  <div class="pd-prose">
+    <p>In Minecraft, every anvil merge costs experience levels, and every merge also raises the item's prior-work
+      penalty, which is added to all later merges. Combine the same books in the wrong order and the total cost climbs,
+      or a single step passes 39 levels and the anvil refuses with "Too Expensive!".</p>
+    <p>The calculator takes an item and the enchantments you want, builds the missing books, and returns the cheapest
+      sequence of merges, optimized either for the fewest levels or for the least prior work on the finished item.</p>
+  </div>
+  <dl class="pd-facts">
+    <div>
+      <dt>Timeline</dt>
+      <dd>May – Aug 2025</dd>
+    </div>
+    <div data-placeholder="Your role and anything notable about the build (solo? how users found it?).">
+      <dt>Role</dt>
+      <dd>Solver, web app and deployment</dd>
+    </div>
+    <div>
+      <dt>Stack</dt>
+      <dd>Python, Flask, JavaScript, Tailwind</dd>
+    </div>
+    <div>
+      <dt>Status</dt>
+      <dd>Live on <a href="https://minecraft-enchantment-order.vercel.app/" target="_blank"
+          rel="noopener noreferrer">Vercel</a></dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-how-it-works" aria-labelledby="pd-how-it-works-h" data-toc="How it works">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">02</span> How it works</p>
+  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Split, solve both halves, merge, and remember every answer</h3>
+  <figure class="pd-diagram">
+    <div class="pd-flow">
+      <div class="pd-node">item + books</div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">split into two groups<small>every combinations() subset</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node is-focus">solve each half<small>lru_cache over tuples</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">merge with anvil rules<small>prune InvalidTarget, MergeTooExpensive</small></div><span
+        class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">keep cheapest per prior work</div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">pick by mode<small>levels or prior work</small></div>
+    </div>
+    <figcaption>Every way of splitting the items into a left and a right group is tried, and each group's best plans
+      come from the same function, memoized.</figcaption>
+  </figure>
+  <figure class="pd-code">
+    <figcaption><span>enchantplanner/calculator.py · _cheapest_single</span><a
+        href="https://github.com/BrianKYildirim/minecraft-enchantment-order/blob/main/enchantplanner/calculator.py#L20-L40"
+        target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
+    <pre tabindex="0"><code>for i in range(1, n):
+    for left_idx in itertools.combinations(range(n), i):
+        right_idx = tuple(sorted(set(range(n)) - set(left_idx)))
+        lefts = tuple(items[j] for j in left_idx)
+        rights = tuple(items[j] for j in right_idx)
+
+        for lw, (lsteps, llv, lxp, litem) in _cheapest_single(lefts).items():
+            for rw, (rsteps, rlv, rxp, ritem) in _cheapest_single(rights).items():
+                try:
+                    merged, cost_lv, cost_xp = litem.merge(ritem)
+                except (InvalidTarget, MergeTooExpensive):
+                    continue
+
+                w = merged.anvil_uses
+                tot_lv = llv + rlv + cost_lv
+                tot_xp = lxp + rxp + cost_xp
+                step = Step(litem, ritem, cost_lv, cost_xp, merged.prior_penalty())
+                cand = (lsteps + rsteps + [step], tot_lv, tot_xp, merged)
+
+                if w not in best or best[w][1] &gt; tot_lv:
+                    best[w] = cand</code></pre>
+  </figure>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Why memoization is what keeps it fast</h4>
+    <div class="pd-prose">
+      <p>Splitting every subset into two non-empty groups, all the way down, visits roughly 3<sup>n</sup> combinations:
+        each item is either in the left half, the right half, or outside the current subproblem. Items are frozen
+        dataclasses with a stable hash, so a tuple of them is a valid <code>lru_cache</code> key and each subset of
+        books is solved exactly once.</p>
+    </div>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">The anvil rules, as code</h4>
+    <div class="pd-prose">
+      <ul>
+        <li>A merge costs both items' prior-work penalties (2<sup>uses</sup> − 1 levels each) plus the sacrificed item's
+          enchantment value (level × weight).</li>
+        <li>An item can't be sacrificed into a book (<code>InvalidTarget</code>), and any merge above 39 levels raises
+          <code>MergeTooExpensive</code>; both are skipped, which also prunes the search.</li>
+        <li>The merged item's anvil uses are one more than the larger of the two inputs.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-challenge" aria-labelledby="pd-challenge-h" data-toc="Engineering challenge">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">03</span> Engineering challenge</p>
+  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">Optimizing two objectives without losing either</h3>
+  <dl class="pd-decision">
+    <div>
+      <dt>The problem</dt>
+      <dd>The plan with the fewest levels can leave the item with more prior work, which makes every later repair or
+        enchantment more expensive. Some players want one, some the other, so keeping a single "best" plan per
+        subproblem would throw away answers.</dd>
+    </div>
+    <div
+      data-placeholder="List the approaches you actually considered (e.g. a weighted score, two separate searches) and why they lost.">
+      <dt>Options considered</dt>
+      <dd>
+        <ul>
+          <li><b>One combined score.</b> A single number to minimize, but the weighting decides the answer for the
+            player.</li>
+          <li><b>Two independent searches.</b> Clear, but doubles the work.</li>
+          <li><b>One best plan per prior-work value.</b> A small frontier carried through the same search. <span
+              class="pd-chosen">✓ chosen</span></li>
+        </ul>
+      </dd>
+    </div>
+    <div>
+      <dt>Decision</dt>
+      <dd>Every subproblem returns a dictionary keyed by the result's anvil-use count, holding the cheapest plan in
+        levels for each. At the end the mode picks: fewest levels (ties broken by prior work) or least prior work (ties
+        broken by levels).</dd>
+    </div>
+    <div>
+      <dt>Why</dt>
+      <dd>The prior-work count is bounded by the number of merges, so the frontier stays tiny. And each enchantment
+        appears in exactly one book, so every order of the same books ends with the same enchantments: two plans that
+        also share a prior-work count produce identical items, and only the cheaper one can ever matter.</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">04</span> Results</p>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Fast enough to feel instant, used at scale</h3>
+  <ul class="pd-metrics">
+    <li><span class="v">~20 ms</span><span class="l">to find the cheapest enchantment order</span><span
+        class="pd-src">Site copy</span></li>
+    <li><span class="v">2.8M+</span><span class="l">impressions</span><span class="pd-src">Site copy</span></li>
+  </ul>
+  <div class="pd-prose">
+    <p data-placeholder="Where the impressions came from (search? a Reddit post?) and over what period.">The calculator
+      is a public web app; players use it directly in the browser.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-lessons" aria-labelledby="pd-lessons-h" data-toc="Lessons learned">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Lessons learned</p>
+  <h3 class="pd-h3" id="pd-lessons-h" tabindex="-1">The data structure decided the algorithm</h3>
+  <div class="pd-prose"
+    data-placeholder="2–3 lessons in your own voice: what was hard, what surprised you, what you'd change.">
+    <p>Making items immutable and hashable was what made memoization a one-line decorator instead of a hand-written
+      cache.</p>
+    <p>Keeping a small set of non-dominated plans, instead of one winner, let the same search answer two different
+      questions.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-next" aria-labelledby="pd-next-h" data-toc="What's next">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">06</span> What's next</p>
+  <h3 class="pd-h3" id="pd-next-h" tabindex="-1">Where the calculator could go</h3>
+  <div class="pd-prose" data-placeholder="What you'd add next (new game versions, sharing plans, an API?) and why.">
+    <p>Next steps are still being decided.</p>
+  </div>
+</section>

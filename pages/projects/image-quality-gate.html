@@ -1,0 +1,200 @@
+<section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">One endpoint that says whether an upload is usable</h3>
+  <div class="pd-prose">
+    <p>Image Quality Gate is a REST microservice that scores an uploaded image for sharpness and brightness and returns
+      a single <code>is_ok</code>. An upload pipeline can call it before storing a photo and ask the user to retake a
+      blurry or badly lit one, instead of discovering the problem later.</p>
+    <p>An image passes when <code>blur_score ≥ BLUR_MIN</code> and <code>BRIGHT_MIN ≤ brightness ≤ BRIGHT_MAX</code>.
+      The response also carries both scores, the processed size and the thresholds that were applied.</p>
+  </div>
+  <dl class="pd-facts">
+    <div>
+      <dt>Timeline</dt>
+      <dd>May – Aug 2025</dd>
+    </div>
+    <div>
+      <dt>Endpoints</dt>
+      <dd><code>POST /quality</code>, <code>GET /health</code>, <code>/version</code>, <code>/metrics</code></dd>
+    </div>
+    <div>
+      <dt>Stack</dt>
+      <dd>Python, FastAPI, OpenCV, Pillow, NumPy, Docker</dd>
+    </div>
+    <div>
+      <dt>Limits</dt>
+      <dd>6 MB upload, images scaled to 1600 px on the long side</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-demo" data-toc="Try it" aria-labelledby="pd-demo-h">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">02</span> Try it</p>
+  <div class="demo" data-demo="iqg">
+    <div class="demo-head">
+      <div>
+        <h3 class="demo-title" id="pd-demo-h" tabindex="-1">Try the Image Quality Gate</h3>
+        <p class="demo-desc">Use any image, or a sample, and get the blur and brightness scores the service would
+          return.</p>
+      </div>
+      <span class="demo-pill">Runs in your browser</span>
+    </div>
+    <div class="fidelity">
+      <span class="fidelity-label">Real project logic</span>
+      <p>Runs the service's exact analysis in this tab: EXIF orientation, Pillow-compatible Lanczos resize to 1600px,
+        OpenCV grayscale, variance of Laplacian and mean brightness. Verified against the Python service to
+        floating-point rounding. Nothing is uploaded.</p>
+      <details>
+        <summary>What's ported</summary>
+        <ul>
+          <li>Ported: <code>app/services/preprocess.py</code> (<code>load_and_normalize</code>, <code>to_gray</code>),
+            <code>app/services/quality.py</code> (<code>variance_of_laplacian</code>, <code>brightness</code>,
+            <code>assess</code>), the defaults in <code>app/core/config.py</code> and the Docker image's values from
+            <code>.env.example</code>. The Lanczos resize reproduces Pillow's fixed-point resampler byte for byte;
+            grayscale uses OpenCV 5's coefficients.</li>
+          <li>Decoding and EXIF orientation are done by your browser (<code>createImageBitmap</code>) instead of Pillow;
+            colour profiles are ignored on both sides. Errors mirror the API's 415, 413 and 400 answers.</li>
+          <li>Known differences: transparent images (browsers drop the colour under fully transparent pixels, Pillow
+            keeps it); formats only one side can decode; browsers that add privacy noise to canvas reads; and OpenCV
+            4.x, whose grayscale rounding differs by one level on some pixels.</li>
+          <li>The 32-megapixel limit is a browser-only guard; the service has no pixel limit.</li>
+        </ul>
+      </details>
+    </div>
+    <div class="demo-mount"></div>
+    <div class="demo-status"><span role="status" aria-live="polite"></span><button class="btn-ghost"
+        type="button">Reset</button></div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-how-it-works" aria-labelledby="pd-how-it-works-h" data-toc="How it works">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">03</span> How it works</p>
+  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Five steps from upload to is_ok</h3>
+  <figure class="pd-diagram">
+    <div class="pd-flow">
+      <div class="pd-node">validate<small>type, ≤ 6 MB</small></div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">normalize<small>EXIF, ≤ 1600 px Lanczos</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">grayscale</div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node is-focus">score<small>variance of Laplacian, mean</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">decide<small>thresholds</small></div>
+    </div>
+    <figcaption>Normalizing first means the same photo scores the same whether it arrives rotated, huge or small.
+    </figcaption>
+  </figure>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Why the variance of the Laplacian measures focus</h4>
+    <div class="pd-prose">
+      <p>The Laplacian is a second derivative: it is near zero where brightness changes smoothly and large where it
+        changes abruptly, at edges. A sharp image has many strong edges, so its Laplacian values spread widely and their
+        variance is high. Blur softens edges, the values cluster near zero, and the variance drops.</p>
+    </div>
+    <figure class="pd-code">
+      <figcaption><span>app/services/quality.py</span><a
+          href="https://github.com/BrianKYildirim/image-quality-gate/blob/main/app/services/quality.py#L13-L31"
+          target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
+      <pre tabindex="0"><code>def variance_of_laplacian(gray: np.ndarray) -&gt; float:
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def brightness(gray: np.ndarray) -&gt; float:
+    return float(gray.mean())
+
+
+def assess(gray: np.ndarray, thr: Thresholds) -&gt; dict:
+    blur_score = variance_of_laplacian(gray)
+    bright = brightness(gray)
+    is_ok = (blur_score &gt;= thr.blur_min) and (
+        thr.bright_min &lt;= bright &lt;= thr.bright_max
+    )
+    return {
+        "blur_score": blur_score,
+        "brightness": bright,
+        "is_ok": is_ok,
+    }</code></pre>
+    </figure>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">A small service, run like a real one</h4>
+    <div class="pd-prose">
+      <ul>
+        <li>FastAPI with Pydantic settings: every threshold and limit is an environment variable with a validated
+          default.</li>
+        <li>Middleware echoes an incoming <code>X-Request-ID</code> or generates one, so a request can be traced through
+          JSON logs.</li>
+        <li>The Prometheus instrumentator exposes request metrics at <code>/metrics</code>.</li>
+        <li>The Docker image runs two uvicorn workers; CI runs ruff, black, mypy and pytest on every push.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-challenge" aria-labelledby="pd-challenge-h" data-toc="Engineering challenge">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">04</span> Engineering challenge</p>
+  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">Picking a blur threshold from data instead of by eye</h3>
+  <dl class="pd-decision">
+    <div>
+      <dt>The problem</dt>
+      <dd>The blur score depends on image content and resolution as much as on focus, so no single <code>BLUR_MIN</code>
+        is right for every source of images.</dd>
+    </div>
+    <div
+      data-placeholder="The approaches you weighed for choosing BLUR_MIN (hand-picked value? labelled set? percentiles?) and why they lost.">
+      <dt>Options considered</dt>
+      <dd>
+        <ul>
+          <li><b>A fixed, hand-picked value.</b> Quick, but tuned to whatever images happened to be on hand.</li>
+          <li><b>A labelled sharp/blurry set.</b> Accurate, but someone has to label it for every new source.</li>
+          <li><b>Otsu's method over a folder's scores.</b> Unsupervised and repeatable. <span class="pd-chosen">✓
+              chosen</span></li>
+        </ul>
+      </dd>
+    </div>
+    <div>
+      <dt>Decision</dt>
+      <dd><code>scripts/tune_blur.py</code> scores a folder of representative images with the service's own pipeline and
+        suggests <code>BLUR_MIN</code> with Otsu's method over the log<sub>10</sub> of the blur scores, plus brightness
+        bounds from the central 95% of brightness values.</dd>
+    </div>
+    <div>
+      <dt>Why</dt>
+      <dd>Otsu's method picks the split that maximizes the variance between the two groups, which separates a "sharp"
+        cluster from a "blurry" one without labels; the log scale matches how blur scores spread over orders of
+        magnitude.</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Fast enough to sit in an upload path</h3>
+  <ul class="pd-metrics">
+    <li><span class="v">100+</span><span class="l">requests per second</span><span class="pd-src">Site copy</span></li>
+    <li><span class="v">Live</span><span class="l">stage timings measured by your browser in the demo above</span><span
+        class="pd-src">Live in demo</span></li>
+  </ul>
+</section>
+
+<section class="pd-section" id="pd-lessons" aria-labelledby="pd-lessons-h" data-toc="Lessons learned">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">06</span> Lessons learned</p>
+  <h3 class="pd-h3" id="pd-lessons-h" tabindex="-1">A score is only as good as what it can't see</h3>
+  <div class="pd-prose"
+    data-placeholder="Rewrite these in your own voice, or replace them with what you actually learned.">
+    <p>The blur score is content-dependent: a sharp photo of a smooth, textureless surface scores low, and darkening an
+      image lowers its score too, because it shrinks every edge. The Underexposed sample in the demo shows both checks
+      failing at once.</p>
+    <p>Pin computer-vision dependencies: OpenCV's grayscale rounding changed between 4.x and 5.x, enough to move scores
+      slightly, and <code>requirements.txt</code> doesn't pin <code>opencv-python-headless</code>.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-next" aria-labelledby="pd-next-h" data-toc="What's next">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">07</span> What's next</p>
+  <h3 class="pd-h3" id="pd-next-h" tabindex="-1">Beyond blur and brightness</h3>
+  <div class="pd-prose"
+    data-placeholder="What you'd add next, and why: pinned dependencies, more checks (noise, exposure histogram, resolution), a batch endpoint?">
+    <p>The decision is based only on blur and brightness, so an image can pass while showing the wrong subject or
+      unreadable text. Adding checks like those is the natural next step for a real upload pipeline.</p>
+  </div>
+</section>

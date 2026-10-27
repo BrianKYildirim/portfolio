@@ -1,0 +1,224 @@
+<section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">A text protocol over raw TCP, one thread per client</h3>
+  <div class="pd-prose">
+    <p>A key-value server written with nothing but Python's standard library. <code>server.py</code> listens on port
+      3490, starts a thread for every client that connects, and answers five text commands: <code>SET key value</code>,
+      <code>GET key</code>, <code>REMOVE key</code>, <code>PRINT</code> and <code>quit</code>. Every change is persisted
+      to <code>store.txt</code>, one <code>key⇥value</code> line per entry, and loaded again on start.</p>
+    <p><code>client.py</code> is the matching interactive client: it sends one line, waits for one response, and prints
+      it.</p>
+  </div>
+  <dl class="pd-facts">
+    <div>
+      <dt>Timeline</dt>
+      <dd>Mar – Apr 2025</dd>
+    </div>
+    <div>
+      <dt>Stack</dt>
+      <dd>Python standard library: <code>socket</code>, <code>threading</code>, <code>os</code></dd>
+    </div>
+    <div>
+      <dt>Network</dt>
+      <dd><code>0.0.0.0:3490</code>, <code>listen(10)</code>, <code>recv(1024)</code></dd>
+    </div>
+    <div>
+      <dt>Persistence</dt>
+      <dd><code>store.txt</code>, rewritten on every change</dd>
+    </div>
+  </dl>
+</section>
+
+<section class="pd-section" id="pd-demo" data-toc="Try it" aria-labelledby="pd-demo-h">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">02</span> Try it</p>
+  <div class="demo" data-demo="kv">
+    <div class="demo-head">
+      <div>
+        <h3 class="demo-title" id="pd-demo-h" tabindex="-1">TCP Server Playground</h3>
+        <p class="demo-desc">Connect up to four clients, send commands, and watch server.py's threads, its lock and
+          store.txt.</p>
+      </div>
+      <span class="demo-pill">Runs in your browser</span>
+    </div>
+    <div class="fidelity is-sim">
+      <span class="fidelity-label">Real protocol · simulated network</span>
+      <p>The command parser and store are line-for-line ports of server.py, so responses and store.txt match the real
+        server byte for byte. Sockets, threads and the lock are simulated so you can watch them; no network connection
+        is made, and timings are slowed down for visibility.</p>
+      <details>
+        <summary>What's ported</summary>
+        <ul>
+          <li>Ported from <code>server.py</code>: <code>KeyValueStore</code> (<code>load</code>, <code>save</code>,
+            <code>set</code>, <code>get</code>, <code>remove</code>, <code>print_store</code>),
+            <code>CommandParser</code>, the flow of <code>handle_client</code> and its <code>print()</code> lines. From
+            <code>client.py</code>: one send, one <code>recv(1024)</code>, and its output lines. Verified against the
+            Python classes with 22 command vectors.</li>
+          <li>Simulated, not real: TCP, <code>accept()</code>, the threads, <code>threading.RLock</code> and the file on
+            disk. The socket byte streams are modelled, so a response longer than 1024 bytes is split across reads the
+            way <code>client.py</code> would see it.</li>
+          <li>CPython's lock is not FIFO-fair; the queue is shown in arrival order for clarity. The RLock's count never
+            exceeds 1, because <code>save()</code> doesn't acquire the lock.</li>
+          <li>Python's <code>split()</code>, <code>strip()</code> and <code>upper()</code> match JavaScript for ASCII;
+            they differ only on rare Unicode whitespace and case mappings.</li>
+          <li><code>client.py</code> sends nothing for an empty line and then waits forever, so Send needs at least one
+            character. A real client notices a restarted server on its next read; the demo shows it immediately.</li>
+          <li>Durations are fixed constants, slowed for visibility, not measured.</li>
+        </ul>
+      </details>
+    </div>
+    <div class="demo-mount"></div>
+    <div class="demo-status"><span role="status" aria-live="polite"></span><button class="btn-ghost" type="button">Reset
+        demo</button></div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-how-it-works" aria-labelledby="pd-how-it-works-h" data-toc="How it works">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">03</span> How it works</p>
+  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Every request takes the same path through one lock</h3>
+  <figure class="pd-diagram">
+    <div class="pd-flow">
+      <div class="pd-node">accept()<small>main thread</small></div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">daemon thread<small>one per client</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">recv(1024)</div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">CommandParser</div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node is-focus">store.lock<small>RLock</small></div><span class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">dict + store.txt<small>full rewrite</small></div><span class="pd-edge"
+        aria-hidden="true"></span>
+      <div class="pd-node">sendall()</div>
+    </div>
+    <figcaption>Connections run in parallel threads, but every store operation passes through the same lock.
+    </figcaption>
+  </figure>
+  <figure class="pd-code">
+    <figcaption><span>server.py · Server.handle_client</span><a
+        href="https://github.com/BrianKYildirim/key-value-storage/blob/main/server.py#L197-L213" target="_blank"
+        rel="noopener noreferrer">view on GitHub</a></figcaption>
+    <pre tabindex="0"><code>while True:
+    try:
+        data = client_socket.recv(1024)  # Reads up to 1024 bytes from the client.
+        if not data:
+            print(f"Client {client_address} disconnected.")
+            break
+        message = data.decode().strip()
+        print(f"Received from {client_address}: {message}")
+        if message.lower() == "quit":
+            print(f"Client {client_address} requested to quit.")
+            break  # Decodes the received bytes, strips extra whitespace, and checks for a “quit” command.
+
+        response = self.parser.parse_and_execute(message)
+        client_socket.sendall(response.encode())
+        # Passes the message to CommandParser and sends the resulting response back to the client.
+
+        print(f"Response sent to {client_address}: {response.strip()}")</code></pre>
+  </figure>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Thread per connection, under the GIL</h4>
+    <div class="pd-prose">
+      <p>CPython's global interpreter lock lets one thread run Python code at a time, but a thread blocked in
+        <code>recv()</code>, <code>sendall()</code> or a file write releases it. A server that mostly waits on sockets
+        therefore still serves clients concurrently. The cost is one operating-system thread per open connection.</p>
+    </div>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">Persistence by full rewrite</h4>
+    <div class="pd-prose">
+      <p>Every <code>SET</code>, and every <code>REMOVE</code> that finds its key, reopens <code>store.txt</code> for
+        writing and writes the whole dictionary. The file always matches memory after a successful write, but each write
+        costs time proportional to the whole store, and a crash in the middle of one can leave the file truncated.</p>
+    </div>
+  </div>
+  <div class="pd-sub">
+    <h4 class="pd-h4">A protocol without framing</h4>
+    <div class="pd-prose">
+      <p>A command is whatever one <code>recv(1024)</code> returns. TCP is a byte stream, so two quick sends can arrive
+        in one read and a long one can be split. <code>client.py</code> also reads exactly one <code>recv(1024)</code>
+        per response, so a <code>PRINT</code> longer than 1024 bytes leaves the rest in the socket, and the next command
+        shows the leftover instead of its own answer. The playground reproduces this.</p>
+    </div>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-challenge" aria-labelledby="pd-challenge-h" data-toc="Engineering challenge">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">04</span> Engineering challenge</p>
+  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">Keeping the dictionary and the file consistent across threads</h3>
+  <dl class="pd-decision">
+    <div>
+      <dt>The problem</dt>
+      <dd>Two clients writing at once could interleave a dictionary update with another thread's file rewrite, leaving
+        <code>store.txt</code> out of step with memory.</dd>
+    </div>
+    <div
+      data-placeholder="The alternatives you considered (no lock, a lock per key, a single writer thread?) and why one lock won.">
+      <dt>Options considered</dt>
+      <dd>
+        <ul>
+          <li><b>No lock.</b> Works until two writes overlap.</li>
+          <li><b>A lock per key.</b> More concurrency, but every write rewrites the whole file anyway.</li>
+          <li><b>One lock around every store operation, including the file write.</b> <span class="pd-chosen">✓
+              chosen</span></li>
+        </ul>
+      </dd>
+    </div>
+    <div>
+      <dt>Decision</dt>
+      <dd>A single <code>threading.RLock</code> guards every <code>KeyValueStore</code> method, and the file rewrite
+        happens while it is held.</dd>
+    </div>
+    <div>
+      <dt>Why</dt>
+      <dd>Simple and correct at this scale: each write updates memory and disk as one step, and readers never see a
+        half-applied change. Honestly, the RLock is never re-entered, because <code>save()</code> doesn't take the lock,
+        so a plain <code>Lock</code> would do the same job. And holding the lock during disk I/O makes every client wait
+        for each write.</dd>
+    </div>
+  </dl>
+  <figure class="pd-code">
+    <figcaption><span>server.py · KeyValueStore.set</span><a
+        href="https://github.com/BrianKYildirim/key-value-storage/blob/main/server.py#L89-L93" target="_blank"
+        rel="noopener noreferrer">view on GitHub</a></figcaption>
+    <pre tabindex="0"><code>def set(self, key, value):
+    with self.lock:  # Ensures that updating the store and saving to disk are atomic operations.
+        self.store[key] = value
+        self.save()
+    return f"Added key '{key}' with value '{value}'\n"  # Confirms that the key has been added.</code></pre>
+  </figure>
+</section>
+
+<section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">A working protocol you can drive yourself</h3>
+  <ul class="pd-metrics">
+    <li><span class="v">Custom</span><span class="l">text protocol over raw TCP sockets</span><span class="pd-src">Site
+        copy</span></li>
+    <li><span class="v">Live</span><span class="l">real responses and store.txt from the ported parser in the demo
+        above</span><span class="pd-src">Live in demo</span></li>
+  </ul>
+  <div class="pd-prose">
+    <p>There are no benchmark numbers for this project; the playground above is the best way to see what it does.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-lessons" aria-labelledby="pd-lessons-h" data-toc="Lessons learned">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">06</span> Lessons learned</p>
+  <h3 class="pd-h3" id="pd-lessons-h" tabindex="-1">A byte stream is not a message stream</h3>
+  <div class="pd-prose"
+    data-placeholder="Rewrite in your own voice: what building this taught you about sockets, threads and persistence.">
+    <p>TCP delivers bytes, not commands. Without a delimiter or a length prefix, the server only works because each
+      client waits for an answer before sending again.</p>
+    <p>A lock makes a design correct; it doesn't make it fast. Here every client queues behind the same file write.</p>
+  </div>
+</section>
+
+<section class="pd-section" id="pd-next" aria-labelledby="pd-next-h" data-toc="What's next">
+  <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">07</span> What's next</p>
+  <h3 class="pd-h3" id="pd-next-h" tabindex="-1">What a second version would change</h3>
+  <div class="pd-prose" data-placeholder="Pick the changes you'd actually make and say why, in your own words.">
+    <ul>
+      <li>Newline framing on both sides, so commands and responses can't merge or split.</li>
+      <li>An append-only log with periodic compaction instead of rewriting the whole file on every change.</li>
+      <li>A thread pool, or <code>selectors</code> / <code>asyncio</code>, instead of one thread per connection.</li>
+      <li>Quoted values, so a value can contain spaces.</li>
+    </ul>
+  </div>
+</section>

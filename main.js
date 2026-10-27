@@ -2,10 +2,12 @@ const content = document.getElementById("content");
 const navLinks = document.querySelectorAll(".navbar a[data-page]");
 
 async function loadPage(page) {
+    document.dispatchEvent(new CustomEvent("page:will-change", { detail: { page } }));
     const response = await fetch(`pages/${page}.html`);
     const html = await response.text();
     content.innerHTML = html;
     updateActiveNavLink(page);
+    document.dispatchEvent(new CustomEvent("page:loaded", { detail: { page } }));
 }
 
 function updateActiveNavLink(activePage) {
@@ -50,4 +52,4 @@ document.addEventListener("click", event => {
     });
 });
 
-loadPage("about");
+loadPage(/^#projects\/[\w-]+$/.test(location.hash) ? "projects" : "about");
