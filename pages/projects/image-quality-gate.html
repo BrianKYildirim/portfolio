@@ -97,28 +97,20 @@
         variance is high. Blur softens edges, the values cluster near zero, and the variance drops.</p>
     </div>
     <figure class="pd-code">
-      <figcaption><span>app/services/quality.py</span><a
-          href="https://github.com/BrianKYildirim/image-quality-gate/blob/main/app/services/quality.py#L13-L31"
+      <figcaption><span>app/services/quality.py</span>
+        <span class="pd-src">as of <code>ad6a3b5</code></span><a
+          href="https://github.com/BrianKYildirim/image-quality-gate/blob/ad6a3b5b63de6d749141bfecabae28c4de0b12b7/app/services/quality.py#L37-L46"
           target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
-      <pre tabindex="0"><code>def variance_of_laplacian(gray: np.ndarray) -&gt; float:
-    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+      <pre tabindex="0"><code>def laplacian(gray: np.ndarray) -&gt; np.ndarray:
+    return cv2.Laplacian(gray, cv2.CV_64F)
+
+
+def variance_of_laplacian(gray: np.ndarray) -&gt; float:
+    return float(laplacian(gray).var())
 
 
 def brightness(gray: np.ndarray) -&gt; float:
-    return float(gray.mean())
-
-
-def assess(gray: np.ndarray, thr: Thresholds) -&gt; dict:
-    blur_score = variance_of_laplacian(gray)
-    bright = brightness(gray)
-    is_ok = (blur_score &gt;= thr.blur_min) and (
-        thr.bright_min &lt;= bright &lt;= thr.bright_max
-    )
-    return {
-        "blur_score": blur_score,
-        "brightness": bright,
-        "is_ok": is_ok,
-    }</code></pre>
+    return float(gray.mean())</code></pre>
     </figure>
   </div>
   <div class="pd-sub">
