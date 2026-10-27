@@ -167,34 +167,36 @@ if (tokens &gt;= kUnit) {
       <dd>Lock only the key's own slot, spin briefly with exponential backoff before yielding, and deny over-limit keys
         without writing when nothing would change.</dd>
     </div>
-    <div
-      data-placeholder="The README measured the per-shard spinlock that preceded per-slot locks: confirm the 2.7× still holds for the current design, or re-run and update.">
+    <div>
       <dt>Why</dt>
-      <dd>In the README's benchmarks the test-and-test-and-set spinlock was as fast as or faster than
-        <code>std::mutex</code> at every thread count tested (1 to 16 threads on 8 hardware threads), and up to 2.7×
-        faster on a contended hot key.</dd>
+      <dd>The critical section is a few dozen instructions, so a waiting thread spins with exponentially longer pauses
+        instead of going to sleep, which also keeps it from pulling the cache line away from the holder, and yields
+        only in case the holder was preempted. Because the lock lives in the key's own slot, decisions for different
+        keys never take the same lock, and a key a thread has just seen denied can be denied again from a snapshot
+        without taking it.</dd>
     </div>
   </dl>
 </section>
 
 <section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
-  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Tens of millions of decisions per second</h3>
-  <ul class="pd-metrics">
-    <li><span class="v">75.7M</span><span class="l">operations per second</span><span class="pd-src">Site copy · native
-        benchmark</span></li>
-    <li><span class="v">40 ns</span><span class="l">processing latency per decision</span><span class="pd-src">Site copy
-        · native benchmark</span></li>
-    <li><span class="v">375×</span><span class="l">faster than Redis</span><span class="pd-src">Site copy · native
-        benchmark</span></li>
-    <li><span class="v">2.7×</span><span class="l">spinlock vs <code>std::mutex</code> on a contended hot
-        key</span><span class="pd-src">README benchmark</span></li>
-  </ul>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">What the benchmarks measure</h3>
   <div class="pd-prose">
-    <p
-      data-placeholder="Benchmark conditions for 75.7M ops/s, 40 ns and 375×: CPU, thread count, workload (Hot/Uniform, key count), build flags, and how Redis was measured.">
-      These figures come from native benchmarks of the C++ library. The playground above runs the decision logic in
-      JavaScript on a simulated clock and measures nothing about native speed.</p>
+    <p>The library has two benchmark programs: <code>rl_bench</code>, built on Google Benchmark, and
+      <code>rl_latency</code>. Together they measure:</p>
+    <ul>
+      <li>throughput as <code>wall_ops/s</code> (all threads' calls divided by wall time) across thread counts, for
+        one hot key, many shared keys and per-thread keys;</li>
+      <li>the time per call on a single thread, and the cost of inserting new keys;</li>
+      <li>latency percentiles, from <code>rl_latency</code>;</li>
+      <li>the overhead of read-only inspection with <code>inspect()</code>;</li>
+      <li>memory per tracked key.</li>
+    </ul>
+    <p>The README section <a
+        href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/6d436a88018b207211ae120fee4df1dc703c5dfe/README.md#performance-what-i-measured-and-how"
+        target="_blank" rel="noopener noreferrer">Performance: what I measured and how</a> describes how each
+      benchmark is run and on what machine, with an example run (as of <code>6d436a8</code>). The playground above
+      runs the decision logic in JavaScript on a simulated clock and measures nothing about native speed.</p>
   </div>
 </section>
 
