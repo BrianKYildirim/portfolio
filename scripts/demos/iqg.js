@@ -1,4 +1,4 @@
-// Image Quality Gate demo: decodes an image in the browser and runs the service's exact analysis
+// Image Quality Gate demo: decodes an image in the browser and runs a JavaScript port of the service's analysis
 // (iqg-core.js) in a module worker. mount() builds the UI; analyze() is also used by tests/demos.html.
 import { DEFAULTS, DOCKER_ENV, MAX_UPLOAD_BYTES, analyzeRGBA, decide } from './iqg-core.js';
 
@@ -21,7 +21,7 @@ const fmtMs = (ms) => (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + ' ms';
 const pyFloat = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v)); // Python float repr
 const middle = (s, n = 34) => (s.length > n ? `${s.slice(0, n - 13)}…${s.slice(-12)}` : s);
 const decodeError = (name = '') => new DemoError(["Your browser couldn't open this image." + (/\.hei[cf]$/i.test(name) ? ' HEIC opens only in Safari.' : ''), 'The service would answer 400 Invalid image data.']);
-const pixelError = (w, h) => new DemoError([`This image is ${Math.round((w * h) / 1e6)} MP. To protect memory, the in-browser demo stops at 32 MP.`, 'Browser-only guard — the service has no pixel limit.']);
+const pixelError = (w, h) => new DemoError([`This image is ${Math.round((w * h) / 1e6)} MP. To protect memory, the in-browser demo stops at 32 MP.`, "This is the demo's own guard; the service itself rejects images over 25 MP with 400 Invalid image data."]);
 
 // ---------- Pipeline ----------
 // Main-thread decode for the fallbacks and the darkened sample (the worker has its own copy).
@@ -163,7 +163,7 @@ const TEMPLATE = `
     <p class="demo-small">Your image stays on this device. It's decoded and analyzed by JavaScript in this tab; nothing is sent over the network.</p>
   </div>
   <div class="demo-card demo-iqg-out">
-    <p class="demo-small" data-empty-out>Results appear here: the same <code>is_ok</code>, scores and thresholds the service returns.</p>
+    <p class="demo-small" data-empty-out>Results appear here: <code>is_ok</code>, scores and thresholds in the same shape as the service's response.</p>
     <ol class="demo-stages" data-stages aria-label="Analysis stages, measured in your browser" hidden></ol>
     <div class="demo-result" data-result hidden>
       <div class="demo-row"><span class="demo-badge" data-badge></span><code class="demo-mono" data-isok></code></div>
@@ -188,7 +188,7 @@ const TEMPLATE = `
       <details data-d="json"><summary>Response JSON</summary><pre class="demo-code" data-json tabindex="0"></pre></details>
       <details data-d="thr"><summary>Thresholds</summary>
         <div class="demo-thr">
-          <label class="demo-field"><span class="demo-label">Preset</span><select class="demo-input" data-preset><option value="service">Service defaults (config.py)</option><option value="docker">Docker image (.env.example)</option><option value="custom">Custom</option></select></label>
+          <label class="demo-field"><span class="demo-label">Preset</span><select class="demo-input" data-preset><option value="service">config.py defaults, no .env (140/20/235)</option><option value="docker">Docker image, .env.example (70/10/235)</option><option value="custom">Custom</option></select></label>
           <label class="demo-field"><span class="demo-label">BLUR_MIN</span><input class="demo-input" type="number" min="0" step="any" inputmode="decimal" data-t="blur_min"></label>
           <label class="demo-field"><span class="demo-label">BRIGHT_MIN</span><input class="demo-input" type="number" min="0" max="255" step="1" data-t="bright_min"></label>
           <label class="demo-field"><span class="demo-label">BRIGHT_MAX</span><input class="demo-input" type="number" min="0" max="255" step="1" data-t="bright_max"></label>

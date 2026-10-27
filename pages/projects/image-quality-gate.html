@@ -35,30 +35,34 @@
     <div class="demo-head">
       <div>
         <h3 class="demo-title" id="pd-demo-h" tabindex="-1">Try the Image Quality Gate</h3>
-        <p class="demo-desc">Use any image, or a sample, and get the blur and brightness scores the service would
-          return.</p>
+        <p class="demo-desc">Use any image, or a sample, and get blur and brightness scores from a JavaScript port
+          of the service's analysis.</p>
       </div>
       <span class="demo-pill">Runs in your browser</span>
     </div>
     <div class="fidelity">
-      <span class="fidelity-label">Real project logic</span>
-      <p>Runs the service's exact analysis in this tab: EXIF orientation, Pillow-compatible Lanczos resize to 1600px,
-        OpenCV grayscale, variance of Laplacian and mean brightness. Verified against the Python service to
-        floating-point rounding. Nothing is uploaded.</p>
+      <span class="fidelity-label">Ported project logic</span>
+      <p>A JavaScript port of the service's analysis at commit <code>436fe53</code> runs in this tab: EXIF
+        orientation, a Pillow-compatible Lanczos resize to 1600px, OpenCV grayscale, variance of Laplacian and mean
+        brightness. It was compared with the Python service while it was written, but it is a port, and results can
+        differ (see Known differences). Nothing is uploaded.</p>
       <details>
         <summary>What's ported</summary>
         <ul>
           <li>Ported: <code>app/services/preprocess.py</code> (<code>load_and_normalize</code>, <code>to_gray</code>),
             <code>app/services/quality.py</code> (<code>variance_of_laplacian</code>, <code>brightness</code>,
             <code>assess</code>), the defaults in <code>app/core/config.py</code> and the Docker image's values from
-            <code>.env.example</code>. The Lanczos resize reproduces Pillow's fixed-point resampler byte for byte;
+            <code>.env.example</code>, which a container built from the Dockerfile copies to <code>.env</code>. The
+            Lanczos resize reproduces Pillow's fixed-point resampler byte for byte;
             grayscale uses OpenCV 5's coefficients.</li>
           <li>Decoding and EXIF orientation are done by your browser (<code>createImageBitmap</code>) instead of Pillow;
             colour profiles are ignored on both sides. Errors mirror the API's 415, 413 and 400 answers.</li>
           <li>Known differences: transparent images (browsers drop the colour under fully transparent pixels, Pillow
             keeps it); formats only one side can decode; browsers that add privacy noise to canvas reads; and OpenCV
             4.x, whose grayscale rounding differs by one level on some pixels.</li>
-          <li>The 32-megapixel limit is a browser-only guard; the service has no pixel limit.</li>
+          <li>The 32-megapixel limit is this demo's own browser guard. The service rejects images over 25 megapixels
+            (<code>MAX_IMAGE_PIXELS</code>) with 400 Invalid image data, checking the header before decoding, so an
+            image between the two limits is scored here but would be rejected by the service.</li>
         </ul>
       </details>
     </div>
