@@ -20,7 +20,8 @@
     </div>
     <div>
       <dt>API</dt>
-      <dd><code>allow</code>, <code>try_acquire</code>, <code>evict_idle</code>, <code>size</code>, <code>clear</code>
+      <dd><code>allow</code>, <code>try_acquire</code>, <code>inspect</code>, <code>now_ns</code>,
+        <code>evict_idle</code>, <code>size</code>, <code>clear</code>
       </dd>
     </div>
     <div>
@@ -43,7 +44,8 @@
     </div>
     <div class="fidelity is-sim">
       <span class="fidelity-label">Real logic · simulated clock</span>
-      <p>A line-for-line JavaScript port of the library's token-bucket decision (<code>consume()</code>: integer
+      <p>A line-for-line JavaScript port of the library's token-bucket decision at commit <code>62e0c26</code>
+        (<code>consume()</code>: integer
         nanotoken refill, new keys start full, <code>remaining</code> and <code>reset_ms</code> exactly as
         <code>allow()</code> returns them), checked against the library's unit tests. Time and traffic are simulated;
         nothing here measures native speed.</p>
@@ -122,8 +124,9 @@ if (tokens &gt;= kUnit) {
     <h4 class="pd-h4">Lookups without a shared lock</h4>
     <div class="pd-prose">
       <p>Each shard publishes its hash table as a single word, so a lookup reads the table without taking any lock and
-        can prefetch the key's slot before the clock is read. Inserts, growth and eviction take the shard's mutex and
-        build a new table; the old one is freed by epoch-based reclamation only once no reader can still be inside it.
+        can prefetch the key's slot before the clock is read. Inserts take the shard's mutex, and a new key usually
+        fills an empty slot in place; growth and eviction build a new table, and the old one is freed by epoch-based
+        reclamation only once no reader can still be inside it.
       </p>
     </div>
   </div>
@@ -209,8 +212,9 @@ if (tokens &gt;= kUnit) {
       written, and it measured two thirds slower on a hot key.</p>
     <p>An earlier Q32.32 fixed-point balance overflowed for capacities above 2<sup>32</sup>; integer nanotokens with
       explicit overflow checks removed that whole class of bug, and a test pins it.</p>
-    <p>A differential test against an independent model (a <code>std::map</code> and 128-bit arithmetic) checks the
-      optimized engine over random operations, including clocks that go backwards.</p>
+    <p>A differential test against an independent model (a <code>std::map</code>, with exact division in place of the
+      engine's overflow checks) checks the optimized engine over random operations, including clocks that go
+      backwards.</p>
   </div>
 </section>
 
