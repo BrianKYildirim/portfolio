@@ -3,9 +3,11 @@
   <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">A text protocol over raw TCP, one thread per client</h3>
   <div class="pd-prose">
     <p>A key-value server written with nothing but Python's standard library. <code>server.py</code> listens on port
-      3490, starts a thread for every client that connects, and answers five text commands: <code>SET key value</code>,
+      3490, starts one thread per connection, at most <code>--max-connections</code> at once (100 by default, limited
+      by a <code>threading.BoundedSemaphore</code>), and answers five text commands: <code>SET key value</code>,
       <code>GET key</code>, <code>REMOVE key</code>, <code>PRINT</code> and <code>quit</code>. Every change is persisted
-      to <code>store.txt</code>, one <code>key⇥value</code> line per entry, and loaded again on start.</p>
+      to <code>store.txt</code>, one <code>key⇥value</code> line per entry, and loaded again on start. On Ctrl+C it
+      stops accepting, lets running commands finish, and closes each open connection before exiting.</p>
     <p><code>client.py</code> is the matching interactive client: it sends one line, waits for one response, and prints
       it.</p>
   </div>
@@ -16,7 +18,7 @@
     </div>
     <div>
       <dt>Stack</dt>
-      <dd>Python standard library: <code>socket</code>, <code>threading</code>, <code>os</code></dd>
+      <dd>Python standard library only</dd>
     </div>
     <div>
       <dt>Network</dt>
@@ -78,7 +80,7 @@
   <figure class="pd-diagram">
     <div class="pd-flow">
       <div class="pd-node">accept()<small>main thread</small></div><span class="pd-edge" aria-hidden="true"></span>
-      <div class="pd-node">daemon thread<small>one per client</small></div><span class="pd-edge"
+      <div class="pd-node">daemon thread<small>one per connection, bounded</small></div><span class="pd-edge"
         aria-hidden="true"></span>
       <div class="pd-node">recv(1024)</div><span class="pd-edge" aria-hidden="true"></span>
       <div class="pd-node">CommandParser</div><span class="pd-edge" aria-hidden="true"></span>
@@ -117,7 +119,9 @@
     <div class="pd-prose">
       <p>CPython's global interpreter lock lets one thread run Python code at a time, but a thread blocked in
         <code>recv()</code>, <code>sendall()</code> or a file write releases it. A server that mostly waits on sockets
-        therefore still serves clients concurrently. The cost is one operating-system thread per open connection.</p>
+        therefore still serves clients concurrently. The cost is one operating-system thread per open connection; a
+        bounded semaphore caps how many exist at once, and further clients wait in the listen backlog until a slot
+        frees up.</p>
     </div>
   </div>
   <div class="pd-sub">
@@ -195,7 +199,11 @@
         above</span><span class="pd-src">Live in demo</span></li>
   </ul>
   <div class="pd-prose">
-    <p>There are no benchmark numbers for this project; the playground above is the best way to see what it does.</p>
+    <p>Load-test results for the current version, with the machine and conditions they were measured under, are in the
+      README: <a
+        href="https://github.com/BrianKYildirim/key-value-storage/blob/9d05eafd13db75b384f60c7b0bc13e736285406e/README.md#what-observability-costs"
+        target="_blank" rel="noopener noreferrer">What observability costs</a> (as of <code>9d05eaf</code>). The
+      playground above is the best way to see what the protocol does.</p>
   </div>
 </section>
 
