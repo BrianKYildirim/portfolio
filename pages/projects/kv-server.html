@@ -95,23 +95,42 @@
     </figcaption>
   </figure>
   <figure class="pd-code">
-    <figcaption><span>server.py · Server.handle_client</span><a
-        href="https://github.com/BrianKYildirim/key-value-storage/blob/main/server.py#L197-L213" target="_blank"
-        rel="noopener noreferrer">view on GitHub</a></figcaption>
+    <figcaption><span>server.py · Server.handle_client</span>
+      <span class="pd-src">as of <code>9d05eaf</code></span><a
+        href="https://github.com/BrianKYildirim/key-value-storage/blob/9d05eafd13db75b384f60c7b0bc13e736285406e/server.py#L297-L331"
+        target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
     <pre tabindex="0"><code>while True:
+    receiving = True  # While waiting for data, an error during shutdown is not the client's fault.
     try:
         data = client_socket.recv(1024)  # Reads up to 1024 bytes from the client.
+        receiving = False
         if not data:
-            print(f"Client {client_address} disconnected.")
+            if self._closing:  # stop() shut the connection down, not the client.
+                self._report_shutdown_close(client_address)
+            else:
+                print(f"Client {client_address} disconnected.")
+                if obs is not None:
+                    obs.peer_disconnected()
             break
+        if obs is not None:
+            obs.bytes_received(len(data))
         message = data.decode().strip()
+        if obs is not None:
+            obs.decoded(message)
         print(f"Received from {client_address}: {message}")
         if message.lower() == "quit":
             print(f"Client {client_address} requested to quit.")
+            if obs is not None:
+                obs.quit_requested()
             break  # Decodes the received bytes, strips extra whitespace, and checks for a “quit” command.
 
         response = self.parser.parse_and_execute(message)
-        client_socket.sendall(response.encode())
+        payload = response.encode()
+        if obs is not None:
+            obs.response_ready(len(payload))
+        client_socket.sendall(payload)
+        if obs is not None:
+            obs.response_sent()
         # Passes the message to CommandParser and sends the resulting response back to the client.
 
         print(f"Response sent to {client_address}: {response.strip()}")</code></pre>
@@ -180,12 +199,18 @@
     </div>
   </dl>
   <figure class="pd-code">
-    <figcaption><span>server.py · KeyValueStore.set</span><a
-        href="https://github.com/BrianKYildirim/key-value-storage/blob/main/server.py#L89-L93" target="_blank"
-        rel="noopener noreferrer">view on GitHub</a></figcaption>
+    <figcaption><span>server.py · KeyValueStore.set</span>
+      <span class="pd-src">as of <code>9d05eaf</code></span><a
+        href="https://github.com/BrianKYildirim/key-value-storage/blob/9d05eafd13db75b384f60c7b0bc13e736285406e/server.py#L134-L143"
+        target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
     <pre tabindex="0"><code>def set(self, key, value):
     with self.lock:  # Ensures that updating the store and saving to disk are atomic operations.
+        obs = self.observer
+        if obs is not None:
+            existed = key in self.store
         self.store[key] = value
+        if obs is not None:
+            obs.store_mutated("set", key, value, existed, len(self.store))
         self.save()
     return f"Added key '{key}' with value '{value}'\n"  # Confirms that the key has been added.</code></pre>
   </figure>
