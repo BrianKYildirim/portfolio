@@ -44,9 +44,10 @@
     </div>
     <div class="fidelity is-sim">
       <span class="fidelity-label">Real protocol · simulated network</span>
-      <p>The command parser and store are line-for-line ports of server.py, so responses and store.txt match the real
-        server byte for byte. Sockets, threads and the lock are simulated so you can watch them; no network connection
-        is made, and timings are slowed down for visibility.</p>
+      <p>The command parser and store are line-for-line ports of server.py at commit <code>7ccdff6</code>, so responses
+        and store.txt match that version byte for byte. The current server also writes store.txt as UTF-8 with Unix
+        line endings and reports malformed lines. Sockets, threads and the lock are simulated so you can watch them; no
+        network connection is made, and timings are slowed down for visibility.</p>
       <details>
         <summary>What's ported</summary>
         <ul>
@@ -60,10 +61,11 @@
             way <code>client.py</code> would see it.</li>
           <li>CPython's lock is not FIFO-fair; the queue is shown in arrival order for clarity. The RLock's count never
             exceeds 1, because <code>save()</code> doesn't acquire the lock.</li>
-          <li>Python's <code>split()</code>, <code>strip()</code> and <code>upper()</code> match JavaScript for ASCII;
-            they differ only on rare Unicode whitespace and case mappings.</li>
-          <li><code>client.py</code> sends nothing for an empty line and then waits forever, so Send needs at least one
-            character. A real client notices a restarted server on its next read; the demo shows it immediately.</li>
+          <li>Python's <code>split()</code>, <code>strip()</code> and <code>upper()</code> match JavaScript for printable
+            ASCII; they differ only on rare control characters, Unicode whitespace and case mappings.</li>
+          <li><code>client.py</code> at <code>7ccdff6</code> sends nothing for an empty line and then waits forever, so
+            Send needs at least one character; the current client skips empty lines. A real client notices a restarted
+            server on its next read; the demo shows it immediately.</li>
           <li>Durations are fixed constants, slowed for visibility, not measured.</li>
         </ul>
       </details>
@@ -195,8 +197,8 @@
   <ul class="pd-metrics">
     <li><span class="v">Custom</span><span class="l">text protocol over raw TCP sockets</span><span class="pd-src">Site
         copy</span></li>
-    <li><span class="v">Live</span><span class="l">real responses and store.txt from the ported parser in the demo
-        above</span><span class="pd-src">Live in demo</span></li>
+    <li><span class="v">Live</span><span class="l">responses and store.txt from the parser ported from
+        <code>7ccdff6</code>, in the demo above</span><span class="pd-src">Live in demo</span></li>
   </ul>
   <div class="pd-prose">
     <p>Load-test results for the current version, with the machine and conditions they were measured under, are in the

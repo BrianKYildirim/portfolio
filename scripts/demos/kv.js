@@ -243,7 +243,7 @@ export function mount(root, { status }) {
     if (!server.up) return;
     out('Server is shutting down gracefully.');
     out('Server socket closed.');
-    note('The process exits; daemon threads stop without printing.');
+    note('In the original server.py (7ccdff6) the process exits here and daemon threads stop without printing; the current server first closes each open connection and prints a closing message.');
     server.up = false; server.threads = []; server.lock = { owner: null, count: 0, queue: [] }; epoch++;
     for (const c of clients) {
       if (c.state === 'connecting') { c.state = 'disconnected'; show(c, 'Failed to connect to server: [Errno 111] Connection refused'); }
