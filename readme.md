@@ -14,10 +14,10 @@ The portfolio highlights selected projects, professional experience, coursework,
 * Client-side navigation between portfolio sections
 * About section with featured projects and technical skills
 * Project showcase with category filtering
-* Experience timeline with measurable results
+* Experience timeline
 * Coursework overview focused on software engineering and computer science
 * Resume, GitHub, LinkedIn, and email links
-* Accessible semantic HTML and descriptive image text
+* Semantic HTML with alt text on images
 * No external framework or build system required
 
 ## Portfolio Sections
@@ -32,19 +32,9 @@ Highlights five projects across full-stack, systems, and backend development:
 
 * **StrivoAI** — Career intelligence platform built with TypeScript, React, Supabase, PostgreSQL, and Stripe
 * **Minecraft Enchantment Calculator** — Recursive optimization tool built with Python and Flask
-* **Rate Limiter Library** — High-performance C++ token-bucket rate limiter
+* **Rate Limiter Library** — Sharded C++ token-bucket rate limiter
 * **Image Quality Gate** — FastAPI microservice for detecting low-quality images
 * **Concurrent Key-Value Server** — Multithreaded TCP key-value store with persistence
-
-### Experience
-
-Details Brian's software engineering internship at Toros Tile, including work on:
-
-* React dashboards
-* Real-time inquiry routing
-* Responsive user interfaces
-* Inventory data processing
-* Python and Pandas automation
 
 ### Coursework
 
@@ -74,18 +64,35 @@ This portfolio is intentionally lightweight and uses browser-native technologies
 ## Project Structure
 
 ```text
-a1-portfolio/
-├── index.html              # Main page shell and navigation
-├── main.js                 # Client-side routing and project filtering
+portfolio/
+├── index.html                      # Main page shell and navigation
+├── main.js                         # Client-side routing and project filtering
 ├── pages/
-│   ├── about.html          # About section
-│   ├── projects.html       # Project showcase
-│   ├── experience.html     # Experience timeline
-│   └── coursework.html     # Coursework overview
+│   ├── about.html                  # About section
+│   ├── projects.html               # Project showcase
+│   ├── experience.html             # Experience timeline
+│   ├── coursework.html             # Coursework overview
+│   └── projects/                   # Case-study partials, loaded into the project panel
+│       ├── strivoai.html
+│       ├── enchantment-calculator.html
+│       ├── rate-limiter.html
+│       ├── image-quality-gate.html
+│       └── kv-server.html
+├── scripts/
+│   ├── project-detail.js           # Project panel and its project registry
+│   └── demos/                      # Interactive demos, each with its engine
+│       ├── ratelimit.js
+│       ├── ratelimit-core.js
+│       ├── iqg.js
+│       ├── iqg-core.js
+│       ├── iqg-worker.js
+│       ├── kv.js
+│       └── kv-core.js
 ├── styles/
-│   └── main.css            # Global styles and responsive layout
-├── static/                 # Images, favicon, and resume
-└── README.md
+│   ├── main.css                    # Global styles and responsive layout
+│   └── project-detail.css          # Project panel and demo styles
+├── static/                         # Images, favicon, and resume
+└── readme.md
 ```
 
 ## Running Locally
@@ -95,8 +102,8 @@ Because this site loads page content with JavaScript, it should be served throug
 ### Option 1: Python
 
 ```Shell
-git clone https://github.com/BrianKYildirim/a1-portfolio.git
-cd a1-portfolio
+git clone https://github.com/BrianKYildirim/portfolio.git
+cd portfolio
 python3 -m http.server 8000
 ```
 
@@ -116,9 +123,12 @@ To update the portfolio:
 
 * Edit `pages/about.html` to change the introduction, skills, or featured projects.
 * Edit `pages/projects.html` to add or update projects.
+* Edit the case-study partials in `pages/projects/` to change a project's write-up.
+* Register a case study and its demo in the registry in `scripts/project-detail.js`.
 * Edit `pages/experience.html` to update professional experience.
 * Edit `pages/coursework.html` to change the education section.
 * Edit `styles/main.css` to change the visual design.
+* Edit `styles/project-detail.css` to change the project panel and demo styles.
 * Edit `main.js` to modify navigation or project filtering behavior.
 * Replace files in `static/` to update images, the favicon, or resume.
 
