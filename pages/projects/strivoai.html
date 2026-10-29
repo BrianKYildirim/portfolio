@@ -1,9 +1,9 @@
 <section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
-  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">Six career tools on one analysis pipeline</h3>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">Five career tools on one analysis pipeline</h3>
   <div class="pd-prose">
-    <p>StrivoAI is an AI career platform: resume analysis, LinkedIn grading, Career Compass, Recruiting Lens, interview
-      prep and job tracking. Each tool asks a different question, but they all run on the same pipeline: the browser
+    <p>StrivoAI is an AI career platform: resume analysis, LinkedIn grading, Career Compass, Recruiting Lens and interview
+      prep. Each tool asks a different question, but they all run on the same pipeline: the browser
       submits work, a Supabase Edge Function records it as a job, model calls run in parallel, and the client polls for
       the result.</p>
     <p data-placeholder="Why you built StrivoAI: the moment or problem that started it, in 1–2 first-person sentences.">
@@ -52,7 +52,7 @@
     <div class="pd-prose">
       <p>A <code>submit-*-analysis-job</code> function validates the request, inserts a <code>pending</code> row into
         <code>analysis_jobs</code>, starts the matching <code>process-*-analysis-job</code> worker and answers
-        <code>202</code> with the job id and a 1.5-second poll interval. If the same work is already
+        with the job id and a poll interval. If the same work is already
         <code>pending</code>, <code>retrying</code> or <code>processing</code>, it returns that job instead of starting
         a second one, so a double click or a reload doesn't start duplicate work.</p>
     </div>
@@ -84,24 +84,11 @@
 
 <section class="pd-section" id="pd-challenge" aria-labelledby="pd-challenge-h" data-toc="Engineering challenge">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">03</span> Engineering challenge</p>
-  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">Cutting an analysis from ~110 s to ~42 s</h3>
+  <h3 class="pd-h3" id="pd-challenge-h" tabindex="-1">Cutting the time an analysis takes</h3>
   <dl class="pd-decision">
     <div>
       <dt>The problem</dt>
-      <dd>A full analysis took about 110 seconds: too long to hold one HTTP request open, and too long to watch a
-        spinner.</dd>
-    </div>
-    <div data-placeholder="Replace with the options you actually weighed and why each lost (or won).">
-      <dt>Options considered</dt>
-      <dd>
-        <ul>
-          <li><b>One synchronous request.</b> Simplest, but the whole analysis rides on one connection staying open.
-          </li>
-          <li><b>One large streamed response.</b> Shows progress sooner, but the total time stays the same.</li>
-          <li><b>Jobs plus parallel structured calls.</b> More moving parts: a jobs table, a worker and polling. <span
-              class="pd-chosen">✓ chosen</span></li>
-        </ul>
-      </dd>
+      <dd>A full analysis took too long to hold one HTTP request open, and too long to watch a spinner.</dd>
     </div>
     <div>
       <dt>Decision</dt>
@@ -118,16 +105,14 @@
 
 <section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">04</span> Results</p>
-  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Faster and cheap enough to offer broadly</h3>
+  <h3 class="pd-h3" id="pd-results-h" tabindex="-1">Shorter analyses</h3>
   <ul class="pd-metrics">
-    <li><span class="v">62%</span><span class="l">faster per analysis (~110 s → ~42 s)</span><span class="pd-src">Site
+    <li><span class="v">Parallel calls</span><span class="l">shorter analyses</span><span class="pd-src">Site
         copy</span></li>
-    <li><span class="v">&lt; $0.10</span><span class="l">cost per analysis</span><span class="pd-src">Site copy</span>
-    </li>
   </ul>
   <div class="pd-prose">
     <p data-placeholder="Add usage you can share (users, analyses run, conversion to paid), or delete this paragraph.">
-      StrivoAI is live and taking real analyses at strivoai.net.</p>
+      StrivoAI is live at strivoai.net.</p>
   </div>
 </section>
 

@@ -1,6 +1,6 @@
 <section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
-  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">A per-key token bucket that stays fast under contention</h3>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">A per-key token bucket built for contention</h3>
   <div class="pd-prose">
     <p>An in-process rate limiter for C++20. Every key, such as a user id or an IP address, gets its own token bucket
       with a capacity and a refill rate. <code>allow(key, limit)</code> takes one token if there is one and returns
@@ -159,8 +159,8 @@ if (tokens &gt;= kUnit) {
         <ul>
           <li><b><code>std::mutex</code> per shard.</b> Simple and correct, but every decision for a hot key serializes
             on one mutex, and every denial still writes.</li>
-          <li><b>Write-intent prefetch.</b> Fetch the slot ready for writing before locking. Measured: it cut hot-key
-            throughput by two thirds, because it takes the line away from every other core.</li>
+          <li><b>Write-intent prefetch.</b> Fetch the slot ready for writing before locking. Measured: it was slower on a hot
+            key, because it takes the line away from every other core.</li>
           <li><b>Per-slot spinlock + read-only denials.</b> A version lock inside each 64-byte slot, held for a few
             dozen instructions, and quiet denials decided from a snapshot. <span class="pd-chosen">✓ chosen</span></li>
         </ul>
@@ -210,7 +210,7 @@ if (tokens &gt;= kUnit) {
   <div class="pd-prose"
     data-placeholder="2–3 lessons in your own voice. The drafts below are technically accurate; keep, rewrite or replace them.">
     <p>An optimization that looks free can be a loss: a write-intent prefetch seems ideal for a slot that is about to be
-      written, and it measured two thirds slower on a hot key.</p>
+      written, and it measured slower on a hot key.</p>
     <p>An earlier Q32.32 fixed-point balance overflowed for capacities above 2<sup>32</sup>; integer nanotokens with
       explicit overflow checks removed that whole class of bug, and a test pins it.</p>
     <p>A differential test against an independent model (a <code>std::map</code>, with exact division in place of the
