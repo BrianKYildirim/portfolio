@@ -2,7 +2,7 @@
 
 A responsive personal portfolio website for a software engineer focused on systems engineering, backend development, and full-stack applications.
 
-The portfolio highlights selected projects, professional experience, coursework, technical skills, and ways to get in touch.
+The portfolio highlights selected projects, coursework, technical skills, and ways to get in touch.
 
 ## Live Portfolio
 
@@ -14,7 +14,6 @@ The portfolio highlights selected projects, professional experience, coursework,
 * Client-side navigation between portfolio sections
 * About section with featured projects and technical skills
 * Project showcase with category filtering
-* Experience timeline
 * Coursework overview focused on software engineering and computer science
 * Resume, GitHub, LinkedIn, and email links
 * Semantic HTML with alt text on images
@@ -70,7 +69,6 @@ portfolio/
 ├── pages/
 │   ├── about.html                  # About section
 │   ├── projects.html               # Project showcase
-│   ├── experience.html             # Experience timeline
 │   ├── coursework.html             # Coursework overview
 │   └── projects/                   # Case-study partials, loaded into the project panel
 │       ├── strivoai.html
@@ -125,7 +123,6 @@ To update the portfolio:
 * Edit `pages/projects.html` to add or update projects.
 * Edit the case-study partials in `pages/projects/` to change a project's write-up.
 * Register a case study and its demo in the registry in `scripts/project-detail.js`.
-* Edit `pages/experience.html` to update professional experience.
 * Edit `pages/coursework.html` to change the education section.
 * Edit `styles/main.css` to change the visual design.
 * Edit `styles/project-detail.css` to change the project panel and demo styles.
