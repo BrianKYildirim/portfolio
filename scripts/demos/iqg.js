@@ -115,9 +115,16 @@ export async function analyze(input, { thresholds = DEFAULTS, onStage = () => {}
   return { ...r, thread: 'main' };
 }
 
+// A missing sample is a site problem, not an image the service would reject: report the HTTP status.
+async function fetchBlob(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new DemoError([`Couldn't load the sample (HTTP ${r.status}).`]);
+  return r.blob();
+}
+
 // The "Underexposed" sample: the sharp sample with R, G and B scaled in a canvas (Uint8Clamped rounding).
 async function darkened(url, k) {
-  const bmp = await decode(await (await fetch(url)).blob(), url);
+  const bmp = await decode(await fetchBlob(url), url);
   const px = readPixels(bmp), { width, height } = bmp;
   bmp.close();
   for (let i = 0; i < px.length; i += 4) { px[i] *= k; px[i + 1] *= k; px[i + 2] *= k; }
@@ -290,7 +297,7 @@ export function mount(root, { status }) {
         const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
         item = { ...px, name: `${s.url.split('/').pop()} × ${s.scale}`, type: 'RGBA pixels', size: null, url: URL.createObjectURL(blob), under: true };
       } else {
-        const blob = await (await fetch(s.url)).blob();
+        const blob = await fetchBlob(s.url);
         item = { blob, name: s.url.split('/').pop(), type: blob.type, size: blob.size, url: URL.createObjectURL(blob) };
       }
       if (job !== S.job) return URL.revokeObjectURL(item.url);
