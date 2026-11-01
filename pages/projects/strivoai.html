@@ -1,11 +1,11 @@
 <section class="pd-section" id="pd-overview" aria-labelledby="pd-overview-h" data-toc="Overview">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">01</span> Overview</p>
-  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">Five career workflows on one analysis pipeline</h3>
+  <h3 class="pd-h3" id="pd-overview-h" tabindex="-1">Five career workflows on Supabase Edge Functions</h3>
   <div class="pd-prose">
     <p>StrivoAI is an AI career platform: resume analysis, LinkedIn grading, Career Compass, Recruiting Lens and interview
-      prep. Each tool asks a different question, but they all run on the same pipeline: the browser
-      submits work, a Supabase Edge Function records it as a job, model calls run in parallel, and the client polls for
-      the result.</p>
+      prep. Each tool asks a different question and runs as its own Supabase Edge Function. Resume analysis, Career
+      Compass and Recruiting Lens split their work into model calls that run in parallel. Career Compass also runs as a
+      job: the browser submits work, an Edge Function records it as a job, and the client polls for the result.</p>
     <p data-placeholder="Why you built StrivoAI: the moment or problem that started it, in 1–2 first-person sentences.">
       It is built for students and early-career engineers who want concrete, role-specific feedback on their materials
       instead of generic advice.</p>
@@ -32,26 +32,27 @@
 
 <section class="pd-section" id="pd-how-it-works" aria-labelledby="pd-how-it-works-h" data-toc="How it works">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">02</span> How it works</p>
-  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Long analyses run as jobs, not as one long request</h3>
+  <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Career Compass runs as a job, not as one long request</h3>
   <figure class="pd-diagram">
     <div class="pd-flow">
       <div class="pd-node">React SPA<small>TypeScript · Vite</small></div><span class="pd-edge"
         aria-hidden="true"></span>
-      <div class="pd-node">submit-*-analysis-job<small>Edge Function</small></div><span class="pd-edge"
+      <div class="pd-node">submit-career-analysis-job<small>Edge Function</small></div><span class="pd-edge"
         aria-hidden="true"></span>
       <div class="pd-node">job row<small>Postgres · RLS</small></div><span class="pd-edge" aria-hidden="true"></span>
       <div class="pd-node is-focus">parallel model calls<small>structured output</small></div><span class="pd-edge"
         aria-hidden="true"></span>
       <div class="pd-node">client polls<small>get-analysis-job-status</small></div>
     </div>
-    <figcaption>The browser never holds a request open for the whole analysis: it gets a job id back and polls until the
-      job is done.</figcaption>
+    <figcaption>For Career Compass, the browser never holds a request open for the whole analysis: it gets a job id back
+      and polls until the job is done. The other four workflows call their Edge Function directly and wait for its
+      response.</figcaption>
   </figure>
   <div class="pd-sub">
     <h4 class="pd-h4">A job that survives a closed tab</h4>
     <div class="pd-prose">
-      <p>A <code>submit-*-analysis-job</code> function validates the request, inserts a <code>pending</code> row into
-        <code>analysis_jobs</code>, starts the matching <code>process-*-analysis-job</code> worker and answers
+      <p>The <code>submit-career-analysis-job</code> function validates the request, inserts a <code>pending</code> row
+        into <code>analysis_jobs</code>, starts the <code>process-career-analysis-job</code> worker and answers
         with the job id and a poll interval. If the same work is already
         <code>pending</code>, <code>retrying</code> or <code>processing</code>, it returns that job instead of starting
         a second one, so a double click or a reload doesn't start duplicate work.</p>
@@ -60,9 +61,10 @@
   <div class="pd-sub">
     <h4 class="pd-h4">Parallel calls instead of one oversized request</h4>
     <div class="pd-prose">
-      <p>Each feature splits its analysis into independent model calls that run concurrently, and each call returns
-        structured output (a fixed JSON shape) rather than free text. Wall-clock time is set by the slowest call rather
-        than by the sum of all of them.</p>
+      <p>Resume analysis, Career Compass and Recruiting Lens each split their analysis into independent model calls that
+        run concurrently, and each call returns structured output (a fixed JSON shape) rather than free text. For these
+        three, wall-clock time is set by the slowest call rather than by the sum of all of them. LinkedIn grading and
+        interview prep don't split their work this way.</p>
     </div>
   </div>
   <div class="pd-sub">
@@ -88,12 +90,13 @@
   <dl class="pd-decision">
     <div>
       <dt>The problem</dt>
-      <dd>A full analysis took too long to hold one HTTP request open, and too long to watch a spinner.</dd>
+      <dd>The longest analyses took too long to watch a spinner, and Career Compass took too long to hold one HTTP
+        request open.</dd>
     </div>
     <div>
       <dt>Decision</dt>
-      <dd>Run every analysis as a job recorded in Postgres, split it into independent model calls that run in parallel,
-        and let the client poll for the result.</dd>
+      <dd>Split resume analysis, Career Compass and Recruiting Lens into independent model calls that run in parallel,
+        and run Career Compass as a job recorded in Postgres that the client polls for the result.</dd>
     </div>
     <div>
       <dt>Why</dt>
