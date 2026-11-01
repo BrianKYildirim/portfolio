@@ -209,7 +209,7 @@ export function mount(root, { status }) {
     const bytes = enc.encode(message), th = c.thread;
     lastUsed = c;
     travel(c, 'req', () => {
-      if (!th?.alive) return; // bytes already sent still arrive after a quit or Ctrl+C
+      if (!server.up || !th?.alive) return; // bytes already sent still arrive after a quit or Ctrl+C, but not at a stopped server
       th.inBuf = cat(th.inBuf, bytes);
       if (c.gone) th.fin = true; // quit: the socket closes right after the data
       if (th.state === 'recv') threadRecv(th);
@@ -244,6 +244,7 @@ export function mount(root, { status }) {
     out('Server is shutting down gracefully.');
     out('Server socket closed.');
     note('In the original server.py (7ccdff6) the process exits here and daemon threads stop without printing; the current server first closes each open connection and prints a closing message.');
+    for (const th of server.threads) th.alive = false; // daemon threads die with the process
     server.up = false; server.threads = []; server.lock = { owner: null, count: 0, queue: [] }; epoch++;
     for (const c of clients) {
       if (c.state === 'connecting') { c.state = 'disconnected'; show(c, 'Failed to connect to server: [Errno 111] Connection refused'); }
