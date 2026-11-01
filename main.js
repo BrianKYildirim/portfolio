@@ -1,13 +1,14 @@
 const content = document.getElementById("content");
 const navLinks = document.querySelectorAll(".navbar a[data-page]");
 
-async function loadPage(page) {
+// `open` names a project case study to open once the projects page is in (see data-open links).
+async function loadPage(page, open) {
     document.dispatchEvent(new CustomEvent("page:will-change", { detail: { page } }));
     const response = await fetch(`pages/${page}.html`);
     const html = await response.text();
     content.innerHTML = html;
     updateActiveNavLink(page);
-    document.dispatchEvent(new CustomEvent("page:loaded", { detail: { page } }));
+    document.dispatchEvent(new CustomEvent("page:loaded", { detail: { page, open } }));
 }
 
 function updateActiveNavLink(activePage) {
@@ -28,7 +29,7 @@ document.addEventListener("click", event => {
 
     event.preventDefault();
     const page = link.dataset.page;
-    loadPage(page);
+    loadPage(page, link.dataset.open);
 });
 
 document.addEventListener("click", event => {

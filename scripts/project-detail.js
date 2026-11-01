@@ -453,6 +453,14 @@ document.addEventListener('page:loaded', (e) => {
   if (e.detail?.page !== 'projects') return;
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => REGISTRY.forEach((p) => loadPartial(p.id).p.catch(() => {})));
+  // A link elsewhere on the site (e.g. coursework "Applied in") named a project: open its case study.
+  const id = e.detail.open;
+  if (id && PROJECTS.has(id)) {
+    const card = findCard(id);
+    if (!card) return;
+    card.scrollIntoView({ block: 'center', behavior: 'instant' });
+    open(id, { trigger: card, animate: false });
+  }
 });
 
 // ---------- Deep link (#projects/<id>) ----------
