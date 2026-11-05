@@ -1,0 +1,5 @@
+# fixture harness output: illustrative text, not a measurement
+run 1 of 4
+ops 1000000
+elapsed_ns 400000000
+throughput_ops_s 2500000

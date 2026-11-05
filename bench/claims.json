@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "repos": {
+    "ratelimit-cpp": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../ratelimit-cpp" },
+    "image-quality-gate": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../image-quality-gate" },
+    "key-value-storage": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../key-value-storage" },
+    "minecraft-enchantment-order": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../minecraft-enchantment-order" }
+  },
+  "page_repos": {
+    "rate-limiter": "ratelimit-cpp",
+    "image-quality-gate": "image-quality-gate",
+    "kv-server": "key-value-storage",
+    "enchantment-calculator": "minecraft-enchantment-order"
+  },
+  "environments": {
+    "windows-native": { "label": "Windows 11, native" },
+    "ubuntu-wsl2": { "label": "Ubuntu on WSL2" }
+  },
+  "tables": [],
+  "claims": []
+}

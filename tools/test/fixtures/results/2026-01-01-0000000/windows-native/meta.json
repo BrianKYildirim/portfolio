@@ -1,0 +1,42 @@
+{
+  "schema": "bench-meta/1",
+  "project": "fixture-project",
+  "environment_id": "windows-native",
+  "date_utc": "2026-01-01T12:00:00Z",
+  "session_date": "2026-01-01",
+  "tag": null,
+  "source": {
+    "repo": "BrianKYildirim/fixture-project",
+    "sha": "0000000000000000000000000000000000000002",
+    "dirty": false,
+    "untracked": [],
+    "describe": "v0.0.0-fixture"
+  },
+  "command": ["python", "bench/run_bench.py", "--env", "windows-native", "--out", "bench/results"],
+  "hardware": {
+    "cpu_model": "11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz",
+    "physical_cores": 4,
+    "logical_cpus": 8,
+    "memory_bytes": 16991387648
+  },
+  "os": { "family": "Windows", "name": "Windows 11 Home", "build": "26300", "kernel": null, "wsl": null },
+  "power": { "ac_line": true, "scheme": "Balanced" },
+  "toolchain": {
+    "compiler_id": "MSVC",
+    "compiler_version": "19.43.34808",
+    "generator": "Visual Studio 17 2022",
+    "build_type": "Release",
+    "cxx_flags_release": "/O2 /Ob2 /DNDEBUG",
+    "cmake_options": ["-DRL_BUILD_JNI=OFF"]
+  },
+  "library": { "fastclock_uses_tsc": false },
+  "instrumentation": "none",
+  "workload": { "runs": 4, "ops_per_run": 1000000 },
+  "timer": { "name": "QueryPerformanceCounter", "resolution_ns": 100, "overhead_ns": null },
+  "load": { "loadavg_1m_start": null, "loadavg_1m_end": null, "cpu_busy_pct_start": 3.1, "cpu_busy_pct_end": 4.0 },
+  "validity": { "valid": true, "reasons": [] },
+  "raw_files": [
+    { "path": "raw/run-01.txt", "bytes": 132, "sha256": "bf96a225916edafdf00ff8db38a5b14a8cbf7bfe6fbb6291b04af75bf5503bd5" }
+  ],
+  "notes": ["fixture: every value here is illustrative, not a measurement"]
+}

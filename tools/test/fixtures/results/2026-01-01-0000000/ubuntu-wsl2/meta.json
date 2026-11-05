@@ -1,0 +1,47 @@
+{
+  "schema": "bench-meta/1",
+  "project": "fixture-project",
+  "environment_id": "ubuntu-wsl2",
+  "date_utc": "2026-01-01T13:30:00.250Z",
+  "session_date": "2026-01-01",
+  "tag": null,
+  "source": {
+    "repo": "BrianKYildirim/fixture-project",
+    "sha": "0000000000000000000000000000000000000002",
+    "dirty": false,
+    "untracked": [],
+    "describe": "v0.0.0-fixture"
+  },
+  "command": ["python3", "bench/run_bench.py", "--env", "ubuntu-wsl2", "--out", "bench/results"],
+  "hardware": {
+    "cpu_model": "11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz",
+    "physical_cores": 4,
+    "logical_cpus": 8,
+    "memory_bytes": 8306499584
+  },
+  "os": {
+    "family": "Linux",
+    "name": "Ubuntu 26.04.1 LTS",
+    "build": "26.04",
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "wsl": { "version": "2.6.1", "wslconfig": null }
+  },
+  "power": { "ac_line": null, "note": "fixture: AC state not observed from inside WSL", "scheme": "Balanced" },
+  "toolchain": {
+    "version": "3.11.18",
+    "implementation": "CPython",
+    "build": "main, Oct 26 2026",
+    "executable_name": "python3",
+    "packages": {}
+  },
+  "library": {},
+  "instrumentation": "none",
+  "workload": { "runs": 5, "ops_per_run": 1000000 },
+  "timer": { "name": "time.perf_counter_ns", "resolution_ns": 1, "overhead_ns": null },
+  "load": { "loadavg_1m_start": 0.12, "loadavg_1m_end": 0.2, "cpu_busy_pct_start": null, "cpu_busy_pct_end": null },
+  "validity": { "valid": true, "reasons": [] },
+  "raw_files": [
+    { "path": "raw/run-01.txt", "bytes": 126, "sha256": "9be77b26444f8ed3557316b263dfb4b265ea42d45e4a9410a5a6adf5fd5a20a3" }
+  ],
+  "notes": ["fixture: every value here is illustrative, not a measurement"]
+}

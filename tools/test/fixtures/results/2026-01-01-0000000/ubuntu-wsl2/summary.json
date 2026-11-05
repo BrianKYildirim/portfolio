@@ -1,0 +1,58 @@
+{
+  "schema": "bench-summary/1",
+  "project": "fixture-project",
+  "environment_id": "ubuntu-wsl2",
+  "source_sha": "0000000000000000000000000000000000000002",
+  "policy": {
+    "quantile_method": "inclusive",
+    "runs": 5,
+    "warmup": "none (fixture)",
+    "outliers": "no sample is dropped; a run that failed a precondition is excluded here and kept in raw/"
+  },
+  "generated_from": ["raw/run-01.txt"],
+  "tests": { "passed": 54, "failed": 0, "skipped": 0, "total": 54 },
+  "fixture_latency": {
+    "p50": {
+      "n": 5,
+      "values": [30, 28, 31, 29, 32],
+      "median": 30,
+      "min": 28,
+      "max": 32,
+      "p25": 29,
+      "p75": 31,
+      "unit": "ns",
+      "measure": "per_op_latency",
+      "build": "uninstrumented",
+      "percentile": 50,
+      "pooled": 30,
+      "samples": 5000000
+    },
+    "p99": {
+      "n": 5,
+      "values": [120, 110, 130, 125, 115],
+      "median": 120,
+      "min": 110,
+      "max": 130,
+      "p25": 115,
+      "p75": 125,
+      "unit": "ns",
+      "measure": "per_op_latency",
+      "build": "uninstrumented",
+      "percentile": 99,
+      "pooled": 121,
+      "samples": 5000000
+    }
+  },
+  "fixture_throughput": {
+    "n": 5,
+    "values": [9500000, 10000000, 10500000, 9800000, 10200000],
+    "median": 10000000,
+    "min": 9500000,
+    "max": 10500000,
+    "p25": 9800000,
+    "p75": 10200000,
+    "unit": "ops/s",
+    "measure": "throughput",
+    "build": "uninstrumented"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "bench-summary/1",
+  "project": "fixture-project",
+  "environment_id": "windows-native",
+  "source_sha": "0000000000000000000000000000000000000002",
+  "policy": {
+    "quantile_method": "inclusive",
+    "runs": 4,
+    "warmup": "none (fixture)",
+    "outliers": "no sample is dropped; a run that failed a precondition is excluded here and kept in raw/"
+  },
+  "generated_from": ["raw/run-01.txt"],
+  "fixture_bench": {
+    "throughput": {
+      "n": 4,
+      "values": [1, 2, 3, 4],
+      "median": 2.5,
+      "min": 1,
+      "max": 4,
+      "p25": 1.75,
+      "p75": 3.25,
+      "unit": "ops/s",
+      "measure": "throughput",
+      "build": "uninstrumented"
+    }
+  }
+}

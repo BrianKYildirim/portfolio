@@ -1,0 +1,4 @@
+# fixture harness output: illustrative text, not a measurement
+run 1 of 5
+latency_ns p50 30 p99 120
+throughput_ops_s 10000000

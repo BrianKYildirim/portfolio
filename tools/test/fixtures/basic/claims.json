@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "repos": {
+    "ratelimit-cpp": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../ratelimit-cpp" },
+    "image-quality-gate": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../image-quality-gate" },
+    "key-value-storage": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../key-value-storage" },
+    "minecraft-enchantment-order": { "owner": "BrianKYildirim", "default_branch": "main", "local": "../minecraft-enchantment-order" }
+  },
+  "page_repos": {
+    "rate-limiter": "ratelimit-cpp",
+    "image-quality-gate": "image-quality-gate",
+    "kv-server": "key-value-storage",
+    "enchantment-calculator": "minecraft-enchantment-order"
+  },
+  "environments": {
+    "windows-native": { "label": "Windows 11, native" },
+    "ubuntu-wsl2": { "label": "Ubuntu on WSL2" }
+  },
+  "tables": [],
+  "claims": [
+    {
+      "id": "rl.fixture.hot_denied.t8",
+      "project": "ratelimit-cpp",
+      "kind": "throughput",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: one hot key, almost every call denied, 8 threads",
+      "value": 153012345.6,
+      "unit": "calls/s",
+      "stat": "median",
+      "n": 10,
+      "spread": { "kind": "min-max", "low": 128000000, "high": 162000000 },
+      "measure": "throughput",
+      "build": "uninstrumented",
+      "environment": "ubuntu-wsl2",
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/ubuntu-wsl2/summary.json",
+        "pointer": "/rl_bench/BM_Hot_Denied.t8/wall_ops_s"
+      },
+      "source_sha": "0000000000000000000000000000000000000002",
+      "display": { "value": ["153.0M"], "spread": ["128–162M"], "n": ["10 runs"] },
+      "label_required": null
+    }
+  ]
+}
