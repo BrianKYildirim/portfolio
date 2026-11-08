@@ -24,7 +24,10 @@
     </div>
     <div>
       <dt>Limits</dt>
-      <dd>6 MB upload, 25 MP pixel limit checked before decoding, images scaled to 1600 px on the long side</dd>
+      <dd><span data-claim="iqg.config.max_upload_mb">6 MB</span> upload, <span
+          data-claim-waiver="MAX_IMAGE_PIXELS default 25,000,000 (iqg.config.max_image_pixels) in megapixels">25
+          MP</span> pixel limit checked before decoding, images scaled to <span
+          data-claim="iqg.config.resize_max_dim">1600 px</span> on the long side</dd>
     </div>
   </dl>
 </section>
@@ -42,7 +45,7 @@
     </div>
     <div class="fidelity">
       <span class="fidelity-label">Ported project logic</span>
-      <p>A JavaScript port of the service's analysis at commit <code>436fe53</code> runs in this tab: EXIF
+      <p>A JavaScript port of the service's analysis at commit <code>8e47d74</code> runs in this tab: EXIF
         orientation, a Pillow-compatible Lanczos resize to 1600px, OpenCV grayscale, variance of Laplacian and mean
         brightness. It is a port, and results can differ (see Known differences). Nothing is uploaded.</p>
       <details>
@@ -76,16 +79,19 @@
   <h3 class="pd-h3" id="pd-how-it-works-h" tabindex="-1">Five steps from upload to is_ok</h3>
   <figure class="pd-diagram">
     <div class="pd-flow">
-      <div class="pd-node">validate<small>type, ≤ 6 MB</small></div><span class="pd-edge" aria-hidden="true"></span>
-      <div class="pd-node">normalize<small>≤ 25 MP before decode, EXIF, ≤ 1600 px Lanczos</small></div><span class="pd-edge"
-        aria-hidden="true"></span>
+      <div class="pd-node">validate<small>type, ≤ <span data-claim="iqg.config.max_upload_mb">6 MB</span></small></div><span
+        class="pd-edge" aria-hidden="true"></span>
+      <div class="pd-node">normalize<small>≤ <span
+            data-claim-waiver="MAX_IMAGE_PIXELS default 25,000,000 (iqg.config.max_image_pixels) in megapixels">25
+            MP</span> before decode, EXIF, ≤ <span data-claim="iqg.config.resize_max_dim">1600 px</span>
+          Lanczos</small></div><span class="pd-edge" aria-hidden="true"></span>
       <div class="pd-node">grayscale</div><span class="pd-edge" aria-hidden="true"></span>
       <div class="pd-node is-focus">score<small>variance of Laplacian, mean</small></div><span class="pd-edge"
         aria-hidden="true"></span>
       <div class="pd-node">decide<small>thresholds</small></div>
     </div>
     <figcaption>Normalizing first means a rotated photo scores the same as an upright one, and a huge photo is scored
-      at no more than 1600 px on the long side.
+      at no more than <span data-claim="iqg.config.resize_max_dim">1600 px</span> on the long side.
     </figcaption>
   </figure>
   <div class="pd-sub">
@@ -97,8 +103,8 @@
     </div>
     <figure class="pd-code">
       <figcaption><span>app/services/quality.py</span>
-        <span class="pd-src">as of <code>ad6a3b5</code></span><a
-          href="https://github.com/BrianKYildirim/image-quality-gate/blob/ad6a3b5b63de6d749141bfecabae28c4de0b12b7/app/services/quality.py#L37-L46"
+        <span class="pd-src">as of <code>e61761f</code></span><a
+          href="https://github.com/BrianKYildirim/image-quality-gate/blob/e61761fb933d03f8d484ce124d708fedb8932152/app/services/quality.py#L37-L46"
           target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
       <pre tabindex="0"><code>def laplacian(gray: np.ndarray) -&gt; np.ndarray:
     return cv2.Laplacian(gray, cv2.CV_64F)
@@ -152,7 +158,8 @@ def brightness(gray: np.ndarray) -&gt; float:
       <dt>Decision</dt>
       <dd><code>scripts/tune_blur.py</code> scores a folder of representative images
         with a copy of the service's preprocessing and scoring and suggests <code>BLUR_MIN</code> with Otsu's method over the log<sub>10</sub> of the blur scores, plus brightness
-        bounds from the central 95% of brightness values.</dd>
+        bounds from the central <span data-claim="iqg.design.tune_brightness_central_pct">95%</span> of brightness
+        values.</dd>
     </div>
     <div>
       <dt>Why</dt>
@@ -169,15 +176,55 @@ def brightness(gray: np.ndarray) -&gt; float:
   <ul class="pd-metrics">
     <li><span class="v">Live</span><span class="l">stage timings of the JavaScript port, measured by your browser in the
         demo above</span><span class="pd-src">Live in demo</span></li>
+    <li><span class="v"
+        data-claim="iqg.limits.png_bomb_12000x12000.before.rss_growth_mib.ubuntu-wsl2">825 MiB</span><span
+        class="l">peak memory growth of the server for one small PNG that decodes to 12000 × 12000 pixels, before the
+        input limits (code at <code>8e47d74</code>, which decoded the whole image), on <span
+          data-claim="iqg.limits.png_bomb_12000x12000.before.rss_growth_mib.ubuntu-wsl2"
+          data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="iqg.limits.png_bomb_12000x12000.before.rss_growth_mib.ubuntu-wsl2"
+          data-claim-field="spread">825–825 MiB</span></span><span class="pd-src">median of <span
+          data-claim="iqg.limits.png_bomb_12000x12000.before.rss_growth_mib.ubuntu-wsl2" data-claim-field="n">5
+          runs</span></span></li>
+    <li><span class="v"
+        data-claim="iqg.limits.png_bomb_12000x12000.after.rss_growth_mib.ubuntu-wsl2">0.9 MiB</span><span
+        class="l">peak memory growth for the same PNG with the input limits, which reject it from its header before
+        any pixels are decoded, on <span data-claim="iqg.limits.png_bomb_12000x12000.after.rss_growth_mib.ubuntu-wsl2"
+          data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="iqg.limits.png_bomb_12000x12000.after.rss_growth_mib.ubuntu-wsl2"
+          data-claim-field="spread">0.9–0.9 MiB</span></span><span class="pd-src">median of <span
+          data-claim="iqg.limits.png_bomb_12000x12000.after.rss_growth_mib.ubuntu-wsl2" data-claim-field="n">5
+          runs</span></span></li>
+    <li><span class="v"
+        data-claim="iqg.limits.upload_100mib_content_length.after.elapsed_ms.ubuntu-wsl2">1.1 ms</span><span
+        class="l">to answer 413 to a <span
+          data-claim-waiver="size of the probe's test upload, a workload parameter, not a measurement">100 MiB</span>
+        upload with the input limits, without reading the body, on <span
+          data-claim="iqg.limits.upload_100mib_content_length.after.elapsed_ms.ubuntu-wsl2"
+          data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="iqg.limits.upload_100mib_content_length.after.elapsed_ms.ubuntu-wsl2"
+          data-claim-field="spread">0.7–2.3 ms</span></span><span class="pd-src">median of <span
+          data-claim="iqg.limits.upload_100mib_content_length.after.elapsed_ms.ubuntu-wsl2" data-claim-field="n">5
+          runs</span></span></li>
+    <li><span class="v" data-claim="iqg.sharp_small.current_quality.delta.ubuntu-wsl2">+0.06</span><span
+        class="l">ms added to each <code>POST /quality</code> request for a small sharp image by diagnostics and the
+        input limits, paired per round against the code before them, on <span
+          data-claim="iqg.sharp_small.current_quality.delta.ubuntu-wsl2" data-claim-field="environment">Ubuntu on
+          WSL2</span>; 25th to 75th percentile <span data-claim="iqg.sharp_small.current_quality.delta.ubuntu-wsl2"
+          data-claim-field="spread">−0.19 to +0.29 ms</span>, which includes zero: no measurable change</span><span
+        class="pd-src">pooled median of <span data-claim="iqg.sharp_small.current_quality.delta.ubuntu-wsl2"
+          data-claim-field="n">5 sessions</span></span></li>
   </ul>
   <div class="pd-prose">
     <p>The service's benchmark script, <code>scripts/bench_quality.py</code>, compares the code with an older version
       over real HTTP: it starts one single-worker server per variant and reports the paired difference per round of
-      requests. It also times the image pipeline in-process. Sustained throughput under load has not been measured.
-      The README section <a
-        href="https://github.com/BrianKYildirim/image-quality-gate/blob/ad6a3b5b63de6d749141bfecabae28c4de0b12b7/README.md#performance"
-        target="_blank" rel="noopener noreferrer">Performance</a> (as of <code>ad6a3b5</code>) describes the method
-      and the machine, with one example run.</p>
+      requests. It also times the image pipeline in-process. An input-limits probe sends each test request to a fresh
+      server, 5 times per case and code version. The runner does 5 benchmark sessions and the probe per environment,
+      on one laptop, under Ubuntu on WSL2 and under native Windows 11. Sustained throughput under load has not been
+      measured. The README section <a
+        href="https://github.com/BrianKYildirim/image-quality-gate/blob/f5bcf02b8167eb13c5de30537b228c6654c60bc0/README.md#performance"
+        target="_blank" rel="noopener noreferrer">Performance</a> (as of <code>f5bcf02</code>) describes the method
+      and the machine, with full tables for both environments.</p>
   </div>
 </section>
 

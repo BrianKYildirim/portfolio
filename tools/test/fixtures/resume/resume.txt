@@ -1,0 +1,39 @@
+                            JANE FIXTURE
+                 jane.fixture@example.com | (555) 010-0199 | example.com/jane
+
+PROJECTS
+
+Other Project | Python                                                   May 2025 - Aug. 2025
+
+� Earned 2.8M+ impressions with a 39-level search.
+
+Rate Limiter Library | C++, CMake                                            Aug. 2025 - Sep. 2025
+
+� Built a thread-safe C++20 rate limiter, scaling to 1M keys at ~134
+
+bytes per key.
+
+� Verified correctness with 54 tests in CI, and fixed an eviction test failing 6-28 of
+
+1,000 runs.
+
+Image Quality Gate | Python, FastAPI                                         May 2025 - Jun. 2025
+
+� Added paired benchmarks, confirming no measurable slowdown on the default
+
+/quality path.
+
+� Shipped CI running lint and 130 tests on every push.
+
+Concurrent Key-Value Server | Python, TCP Sockets                            Mar. 2025 - Apr. 2025
+
+� Built a TCP key-value server, capped at 100 concurrent
+ clients by default.
+
+� Persisted every change; covered by 54 tests.
+
+ACTIVITIES
+
+Hackathon | Django                                                           Oct. 2025 - Nov. 2025
+
+� Supported 500+ concurrent users.

@@ -1,8 +1,12 @@
-// Claims checker core: checks numbers shown in the portfolio (and later the upstream READMEs) against
+// Claims checker core: checks numbers shown in the portfolio and the upstream READMEs against
 // bench/claims.json and its evidence files (CLAIM-01..06), and validates benchmark results directories
-// (BENCH-01..03/05/06). Pure: no file system and no network; callers pass text in and inject readers
-// (readEvidence, readFile/readdir), so tests run on plain fixtures.
+// (BENCH-01..03/05/06). The checks are pure: callers pass text in and inject readers (readEvidence,
+// readFile/readdir), so tests run on plain fixtures. The GitHub and Sources regions do I/O (fetch, git through
+// execFile, readFile) behind injectable defaults, so their tests run without the network or a clone.
+import { execFile as nodeExecFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFile as fsReadFile, readdir as fsReaddir } from 'node:fs/promises';
+import path from 'node:path';
 
 export const MAX_INPUT_BYTES = 2 * 1024 * 1024;
 const CLAIMS_FILE = 'bench/claims.json';
@@ -148,7 +152,10 @@ async function evidenceFindings(claim, readEvidence, at) {
   try {
     text = await readEvidence(ev.repo, ev.sha, ev.path);
   } catch (err) {
-    return [at('EVIDENCE_VALUE', `${claim.id}: cannot read evidence ${ev.repo}@${String(ev.sha).slice(0, 7)}:${ev.path} (${err.message})`)];
+    // An oversized or unreachable source keeps its own code (INPUT_TOO_LARGE, COULD_NOT_VERIFY); anything else
+    // means the evidence the claim names is not there.
+    const code = SOURCE_CODES.includes(err?.code) ? err.code : 'EVIDENCE_VALUE';
+    return [at(code, `${claim.id}: cannot read evidence ${ev.repo}@${String(ev.sha).slice(0, 7)}:${ev.path} (${err?.message})`)];
   }
   if (byteLength(text) > MAX_INPUT_BYTES) return [at('INPUT_TOO_LARGE', `${claim.id}: evidence ${ev.path} is larger than ${MAX_INPUT_BYTES} bytes`)];
   let summary;
@@ -168,15 +175,27 @@ async function evidenceFindings(claim, readEvidence, at) {
   return out;
 }
 
+// A README marker binds only the number token after it (an HTML leaf holds the whole text), so a comparison's
+// README marker matches the display string that its line (comments removed) holds in full and that contains the
+// token. The D-14 wording then stays checked in markdown too: the string must still say "no measurable
+// difference" or give the ratio, and the bound token must be that ratio.
+function shownString(claim, leaf, shown) {
+  const exact = shown.find((s) => fold(s) === leaf.text);
+  if (exact !== undefined || !leaf.token || claim.kind !== 'comparison' || leaf.field !== 'value') return exact;
+  const line = fold(leaf.context ?? '');
+  return shown.find((s) => typeof s === 'string' && line.includes(fold(s)) && fold(s).includes(leaf.text));
+}
+
 function displayFindings(claim, leaf, at) {
   const shown = claim.display?.[leaf.field];
   if (!['value', 'spread', 'n', 'environment'].includes(leaf.field)) return [at('CLAIM_MISMATCH', `${claim.id}: unknown data-claim-field "${leaf.field}"`)];
-  if (!Array.isArray(shown) || !shown.some((s) => fold(s) === leaf.text)) {
+  const s = Array.isArray(shown) ? shownString(claim, leaf, shown) : undefined;
+  if (s === undefined) {
     return [at('CLAIM_MISMATCH', `${claim.id}: "${leaf.text}" is not one of display.${leaf.field}`)];
   }
   if (claim.kind === 'comparison' && leaf.field === 'value') {
     const r = ratioIn(leaf.text);
-    return lowerFold(leaf.text).includes(NO_DIFFERENCE) || within(r, claim.value) ? []
+    return lowerFold(s).includes(NO_DIFFERENCE) || within(r, claim.value) ? []
       : [at('CLAIM_MISMATCH', `${claim.id}: "${leaf.text}" does not give the comparison's ratio ${claim.value}`)];
   }
   const ok = leaf.field === 'value' ? matchesDisplay(claim.value, leaf.text)
@@ -405,6 +424,362 @@ export function scanJsLines(text, file = '') {
     for (const m of code.matchAll(UNIT_NUMBER)) out.push(finding(file, i + 1, 'UNTAGGED_NUMBER', `"${m[0]}" has a unit but no // claim-waiver: <reason> comment`));
   });
   return out;
+}
+
+// ---------- Markdown ----------
+// CLAIM-03 / D-05: the upstream READMEs follow the same rule as the pages. Markers are HTML comments, which GFM
+// hides, including in table cells (RESEARCH Pattern 6). Text is LF-normalized first, so a CRLF checkout
+// (core.autocrlf=true) gives the same findings and line numbers as an LF one.
+const lf = (text) => String(text).replace(/\r\n?/g, '\n');
+// The value a marker binds to: the first number token after it on its line, with its unit (or "runs", so a
+// #n marker can bind "10 runs" exactly as an HTML leaf would show it). Trimmed before use.
+const MD_BIND = new RegExp(NUM + String.raw`(?:[\s-]?(?:` + UNIT + String.raw`|runs?|repetitions?|rounds?)(?![\w/]))?`);
+const MD_FENCE = /^[ \t]*(`{3,}|~{3,})/;
+const MD_TAG = /<[A-Za-z/!][^<>]*>/g;
+
+// mdStructure(src) -> { comments: [{ start, end, body, line }], fenced: Set<line> }. One forward pass. A comment
+// inside a fenced code block is visible text in GFM, so it is not a comment here (and cannot waive anything).
+// A '<!--' with no '-->' after it is left as text: it is scanned, never a silent skip to the end of the file.
+function mdStructure(src) {
+  const comments = [], fenced = new Set();
+  let fence = null, skipTo = 0, noClose = false, line = 0;
+  for (let start = 0; ; ) {
+    const nl = src.indexOf('\n', start), end = nl === -1 ? src.length : nl, text = src.slice(start, end);
+    line += 1;
+    const inComment = start < skipTo;
+    if (!(inComment && skipTo > end)) {
+      if (!inComment && fence) {
+        fenced.add(line);
+        const t = text.trim();
+        if (t.length >= fence.length && [...t].every((ch) => ch === fence[0])) fence = null;
+      } else if (!inComment && MD_FENCE.test(text)) {
+        fence = MD_FENCE.exec(text)[1];
+        fenced.add(line);
+      } else {
+        for (let from = Math.max(start, skipTo) - start; !noClose; ) {
+          const i = text.indexOf('<!--', from);
+          if (i === -1) break;
+          const j = src.indexOf('-->', start + i + 4);
+          if (j === -1) { noClose = true; break; }
+          comments.push({ start: start + i, end: j + 3, body: src.slice(start + i + 4, j), line });
+          from = j + 3 - start;
+          if (j + 3 > end) { skipTo = j + 3; break; }
+        }
+      }
+    }
+    if (nl === -1) break;
+    start = nl + 1;
+  }
+  return { comments, fenced };
+}
+
+// What a comment is: a claim marker, a waiver, a block boundary, or an ordinary (hidden) comment. A waiver's
+// reason follows a colon; a waiver without the colon has no reason (WAIVER_NO_REASON), as in demo JS.
+const reasonOf = (rest) => ({ colon: /^\s*:/.test(rest), reason: rest.replace(/^\s*:/, '') });
+function mdClassify(c) {
+  const body = c.body.trim();
+  let m = /^claim:([^\s#]*)(?:#(\S*))?$/.exec(body);
+  if (m) return Object.assign(c, { kind: 'marker', id: m[1], field: m[2] ?? 'value' });
+  if ((m = /^claim-waiver-begin(?![\w-])([\s\S]*)$/.exec(body))) return Object.assign(c, { kind: 'waiver-begin' }, reasonOf(m[1]));
+  if (body === 'claim-waiver-end') return Object.assign(c, { kind: 'waiver-end' });
+  if ((m = /^claim-waiver(?![\w-])([\s\S]*)$/.exec(body))) return Object.assign(c, { kind: 'waiver' }, reasonOf(m[1]));
+  if ((m = /^claims-table:begin(?![\w-])([\s\S]*)$/.exec(body))) return Object.assign(c, { kind: 'table-begin', id: /(?:^|\s)id=(\S+)/.exec(m[1])?.[1] ?? '' });
+  if (body === 'claims-table:end') return Object.assign(c, { kind: 'table-end' });
+  if (body === 'bench-methodology:begin') return Object.assign(c, { kind: 'method-begin' });
+  if (body === 'bench-methodology:end') return Object.assign(c, { kind: 'method-end' });
+  return Object.assign(c, { kind: 'comment' });
+}
+// Pairs each begin with the next end, in comment order. A begin met while a block is open is inside it.
+// from/to are comment indices, so "inside a block" is an index range and the whole pass stays linear.
+function pairBlocks(comments, beginKind, endKind) {
+  const blocks = [], unmatched = [];
+  let open = -1;
+  comments.forEach((c, i) => {
+    if (c.kind === beginKind && open === -1) open = i;
+    else if (c.kind === endKind && open === -1) unmatched.push(c);
+    else if (c.kind === endKind) { blocks.push({ begin: comments[open], end: c, from: open, to: i }); open = -1; }
+  });
+  if (open !== -1) unmatched.push(comments[open]);
+  return { blocks, unmatched };
+}
+function mdParse(src) {
+  const { comments, fenced } = mdStructure(src);
+  comments.forEach(mdClassify);
+  return { comments, fenced, waivers: pairBlocks(comments, 'waiver-begin', 'waiver-end'),
+    tables: pairBlocks(comments, 'table-begin', 'table-end'), methodology: pairBlocks(comments, 'method-begin', 'method-end') };
+}
+// lineTable(src) -> { lineOf(offset), start(line), end(line) } over 1-based lines; end is the offset of the '\n'.
+// One table per input keeps every per-marker and per-block lookup logarithmic (a 1 MiB single-line input stays linear).
+function lineTable(src) {
+  const starts = [0];
+  for (let i = src.indexOf('\n'); i !== -1; i = src.indexOf('\n', i + 1)) starts.push(i + 1);
+  const lineOf = (offset) => {
+    let lo = 0, hi = starts.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= offset) lo = mid; else hi = mid - 1; }
+    return lo + 1;
+  };
+  return { lineOf, start: (line) => starts[line - 1], end: (line) => (line < starts.length ? starts[line] - 1 : src.length) };
+}
+// First entry of a list sorted by `at` whose at >= offset, or undefined.
+function firstAtOrAfter(list, offset) {
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid].at < offset) lo = mid + 1; else hi = mid; }
+  return list[lo];
+}
+const mdUntagged = (file, line, token) => finding(file, line, 'UNTAGGED_NUMBER',
+  `"${token}" has a unit but no <!-- claim:<id> --> marker or <!-- claim-waiver: <reason> --> before it`);
+
+// GFM tables. Cells split at unescaped pipes; a leading and a trailing pipe are optional.
+function cellSpans(line) {
+  const pipes = [];
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\') i += 1;
+    else if (line[i] === '|') pipes.push(i);
+  }
+  const first = line.search(/\S/), last = line.trimEnd().length - 1, spans = [];
+  let from = 0, to = line.length;
+  if (pipes.length && pipes[0] === first) { from = first + 1; pipes.shift(); }
+  if (pipes.length && pipes.at(-1) === last && last >= from) { to = last; pipes.pop(); }
+  for (const p of pipes) { spans.push([from, p]); from = p + 1; }
+  spans.push([from, to]);
+  return spans;
+}
+const hasPipe = (line) => cellSpans(line).length > 1 || /^\s*\|/.test(line);
+const isDelimiterRow = (line) => line.includes('|') && cellSpans(line).every(([a, b]) => /^:?-+:?$/.test(line.slice(a, b).trim()));
+// A table ends at a blank line or at the start of another block (heading, quote, list item, fence).
+const ENDS_TABLE = /^\s*$|^[ \t]*(?:#{1,6}(?:\s|$)|>|[-*+][ \t]|\d{1,9}[.)][ \t]|```|~~~)/;
+// A cell is numeric when, after emphasis or code marks and an optional ~, ≈ or sign, it starts with a digit.
+const CELL_NUMERIC = /^[*_`]*(?:[~≈]\s?)?[+−-]?\d/;
+
+// Numeric body cells of the GFM tables outside claims-table blocks (RESEARCH Pitfall 9: units in a header do not
+// exempt unit-less cells). A cell holding a marker or waiver comment is exempt; the comment does the checking.
+// Reported cells are blanked in `lines` so their numbers are not reported a second time as UNTAGGED_NUMBER.
+function tableCellFindings(lines, fenced, marks, file) {
+  const out = [];
+  for (let i = 0; i + 1 < lines.length; ) {
+    const header = lines[i], delimiter = lines[i + 1];
+    if (fenced.has(i + 1) || fenced.has(i + 2) || !hasPipe(header) || !isDelimiterRow(delimiter)
+      || cellSpans(header).length !== cellSpans(delimiter).length) { i += 1; continue; }
+    let j = i + 2;
+    for (; j < lines.length && !fenced.has(j + 1) && !ENDS_TABLE.test(lines[j]); j++) {
+      const own = marks.get(j) ?? [];
+      for (const [a, b] of cellSpans(lines[j])) {
+        const cell = fold(lines[j].slice(a, b));
+        if (own.some((col) => col >= a && col < b) || !CELL_NUMERIC.test(cell)) continue;
+        out.push(finding(file, j + 1, 'TABLE_CELL_UNTAGGED', `table cell "${cell}" is numeric but has no <!-- claim:<id> --> marker or <!-- claim-waiver: <reason> -->; generate the table in a claims-table block or mark the cell`));
+        lines[j] = lines[j].slice(0, a) + blank(lines[j].slice(a, b)) + lines[j].slice(b);
+      }
+    }
+    i = j;
+  }
+  return out;
+}
+
+// scanMarkdown(text, file) -> { markers, findings }. markers ({ file, id, field, text, line, context }) go to
+// checkTagged exactly like HTML leaves; context is the marker's line with comments removed. A marker or inline
+// waiver binds to the first number token after it on its line. Block waivers and claims-table blocks
+// (checked by checkTables) are not scanned; an unterminated block is a finding and its text is still scanned.
+// Findings: MD_MARKER_NO_NUMBER, WAIVER_NO_REASON, WAIVER_UNTERMINATED, TABLE_CELL_UNTAGGED, UNTAGGED_NUMBER,
+// INPUT_TOO_LARGE, in line order with true source lines.
+export function scanMarkdown(text, file = '') {
+  if (byteLength(text) > MAX_INPUT_BYTES) return { markers: [], findings: [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)] };
+  const src = lf(text).normalize('NFC'), p = mdParse(src), lt = lineTable(src), markers = [], out = [];
+  const inside = new Set(), regions = [];
+  for (const b of [...p.waivers.blocks, ...p.tables.blocks]) {
+    regions.push([b.begin.start, b.end.end]);
+    for (let k = b.from + 1; k < b.to; k++) inside.add(k);
+  }
+  for (const b of p.waivers.blocks) {
+    if (!b.begin.colon || noReason(b.begin.reason)) out.push(finding(file, b.begin.line, 'WAIVER_NO_REASON', `write <!-- claim-waiver-begin: <reason> --> with a reason the owner can review (got "${fold(b.begin.reason)}")`));
+  }
+  for (const c of p.waivers.unmatched) {
+    out.push(finding(file, c.line, 'WAIVER_UNTERMINATED', c.kind === 'waiver-begin'
+      ? '<!-- claim-waiver-begin --> has no <!-- claim-waiver-end -->, so nothing after it is waived'
+      : '<!-- claim-waiver-end --> has no <!-- claim-waiver-begin: <reason> --> before it'));
+  }
+  const blanked = blankRanges(src, p.comments.map((c) => [c.start, c.end]));
+  // The number tokens of a line, found once per line (a token never straddles a blanked comment, so the first
+  // token at or after a marker's end is the one an exec from that offset would find).
+  const tokenCache = new Map(), contextCache = new Map(), bindAll = new RegExp(MD_BIND.source, 'g');
+  const tokensOn = (line) => {
+    if (!tokenCache.has(line)) {
+      const from = lt.start(line), list = [];
+      for (const m of blanked.slice(from, lt.end(line)).matchAll(bindAll)) list.push({ at: from + m.index, token: m[0].trim() });
+      tokenCache.set(line, list);
+    }
+    return tokenCache.get(line);
+  };
+  const bound = [], marks = new Map();
+  p.comments.forEach((c, i) => {
+    if (inside.has(i) || (c.kind !== 'marker' && c.kind !== 'waiver')) return;
+    const startLine = lt.lineOf(c.start), endLine = lt.lineOf(c.end);
+    if (!marks.has(startLine - 1)) marks.set(startLine - 1, []);
+    marks.get(startLine - 1).push(c.start - lt.start(startLine));
+    const what = c.kind === 'marker' ? `<!-- claim:${c.id} -->` : '<!-- claim-waiver -->';
+    if (c.kind === 'waiver' && (!c.colon || noReason(c.reason))) out.push(finding(file, c.line, 'WAIVER_NO_REASON', `write <!-- claim-waiver: <reason> --> with a reason the owner can review (got "${fold(c.reason)}")`));
+    const t = firstAtOrAfter(tokensOn(endLine), c.end);
+    if (!t) { out.push(finding(file, c.line, 'MD_MARKER_NO_NUMBER', `${what} has no number after it on its line`)); return; }
+    bound.push([t.at, t.at + t.token.length]);
+    if (c.kind !== 'marker') return;
+    const key = `${startLine}:${endLine}`;
+    if (!contextCache.has(key)) contextCache.set(key, fold(blanked.slice(lt.start(startLine), lt.end(endLine))));
+    markers.push({ file, id: c.id, field: c.field, text: fold(t.token), line: c.line, context: contextCache.get(key), token: true });
+  });
+  const lines = blankRanges(blanked, [...bound, ...regions]).split('\n');
+  out.push(...tableCellFindings(lines, p.fenced, marks, file));
+  lines.forEach((raw, i) => {
+    if (!/\d/.test(raw)) return;   // no digit, no unit-number (a numeric entity such as &#49; holds digits itself)
+    const visible = decodeEntities(raw.replace(MD_TAG, ' ')).replace(/\s+/g, ' ');
+    for (const m of visible.matchAll(UNIT_NUMBER)) out.push(mdUntagged(file, i + 1, m[0]));
+  });
+  return { markers, findings: out.sort((a, b) => a.line - b.line) };
+}
+
+// ---------- Generated tables ----------
+// RESEARCH Pattern 7: a README table between <!-- claims-table:begin id=<id> --> and <!-- claims-table:end --> is
+// rendered from bench/claims.json tables[] and must match the render byte for byte (after LF normalization), so
+// a hand edit cannot drift. Spec: { id, project, columns: [header], rows: [{ cells: [{ text } | { claim, format }] }] }.
+const TABLE_FORMATS = Object.freeze(['value', 'value+spread']);
+const escCell = (s) => String(s).replace(/\s*\n\s*/g, ' ').replace(/(?<!\\)\|/g, '\\|');
+
+// A claim cell shows the claim's first display strings, never a recomputed number: value, or "value (spread)".
+function tableCell(cell, where, claimsById, bad) {
+  const none = { text: '', numeric: false };
+  if (isObj(cell) && typeof cell.text === 'string' && cell.claim === undefined) return { text: cell.text, numeric: CELL_NUMERIC.test(fold(cell.text)) };
+  if (!isObj(cell) || !isStr(cell.claim)) { bad('TABLE_SPEC', `${where} must be { text } or { claim, format }`); return none; }
+  const format = cell.format ?? 'value', claim = lookup(claimsById, cell.claim);
+  if (!TABLE_FORMATS.includes(format)) { bad('TABLE_SPEC', `${where}: format "${format}" is not one of ${TABLE_FORMATS.join(', ')}`); return none; }
+  if (!claim) { bad('CLAIM_UNKNOWN', `"${cell.claim}" is not in ${CLAIMS_FILE}`); return none; }
+  if (claim.status !== 'approved') { bad('CLAIM_NOT_APPROVED', `${claim.id} has status ${claim.status}; only approved claims may be shown`); return none; }
+  const value = claim.display?.value?.[0], spread = claim.display?.spread?.[0];
+  if (!isStr(value)) { bad('TABLE_SPEC', `${where}: ${claim.id} has no display.value string to show`); return none; }
+  if (format === 'value+spread' && !isStr(spread)) { bad('TABLE_SPEC', `${where}: ${claim.id} has no display.spread string to show`); return none; }
+  return { text: format === 'value+spread' ? `${value} (${spread})` : value, numeric: true };
+}
+
+// renderTable(spec, claimsById) -> { text, findings }. text is the GFM table (header row, a separator with ---:
+// for numeric columns, one row per spec row in order, LF line ends, no trailing newline), or null when any
+// finding (TABLE_SPEC, TABLE_EMPTY, CLAIM_UNKNOWN, CLAIM_NOT_APPROVED) means it must not be shown.
+export function renderTable(spec, claimsById) {
+  const out = [], bad = (code, message) => out.push({ code, message });
+  if (!isObj(spec)) return { text: null, findings: [{ code: 'TABLE_SPEC', message: 'a table spec must be an object' }] };
+  const name = isStr(spec.id) ? spec.id : '(no id)';
+  const cols = Array.isArray(spec.columns) && spec.columns.length && spec.columns.every(isStr) ? spec.columns : null;
+  if (!cols) bad('TABLE_SPEC', `${name}: columns must be a non-empty list of header strings`);
+  if (!Array.isArray(spec.rows)) bad('TABLE_SPEC', `${name}: rows must be a list`);
+  else if (!spec.rows.length) bad('TABLE_EMPTY', `${name}: the table has no rows`);
+  if (out.length) return { text: null, findings: out };
+  const rows = spec.rows.map((row, i) => {
+    if (!isObj(row) || !Array.isArray(row.cells) || row.cells.length !== cols.length) {
+      bad('TABLE_SPEC', `${name}: rows[${i}] must have ${cols.length} cells`);
+      return [];
+    }
+    return row.cells.map((cell, k) => tableCell(cell, `${name}: rows[${i}].cells[${k}]`, claimsById, bad));
+  });
+  if (out.length) return { text: null, findings: out };
+  const numeric = cols.map((_, k) => rows.every((r) => r[k].numeric)), line = (cells) => `| ${cells.map(escCell).join(' | ')} |`;
+  return { text: [line(cols), `|${numeric.map((n) => (n ? '---:' : '---')).join('|')}|`, ...rows.map((r) => line(r.map((c) => c.text)))].join('\n'), findings: [] };
+}
+
+const claimsMap = (doc) => {
+  const byId = new Map();
+  for (const c of Array.isArray(doc?.claims) ? doc.claims : []) if (isObj(c) && typeof c.id === 'string' && !byId.has(c.id)) byId.set(c.id, c);
+  return byId;
+};
+// Every claims-table block in src with its spec and render. The block body is everything between the two comments:
+// a newline, the table lines (each indented like the begin comment, so a table may sit in a list item), a newline
+// and that indent again before the end comment.
+function tableBlocks(src, file, doc, project) {
+  const p = mdParse(src), out = [], renders = [], specs = new Map(), byId = claimsMap(doc), lt = lineTable(src);
+  for (const t of Array.isArray(doc?.tables) ? doc.tables : []) if (isObj(t) && typeof t.id === 'string' && !specs.has(t.id)) specs.set(t.id, t);
+  for (const c of p.tables.unmatched) {
+    out.push(finding(file, c.line, 'TABLE_UNTERMINATED', c.kind === 'table-begin'
+      ? `<!-- claims-table:begin id=${c.id} --> has no <!-- claims-table:end -->` : '<!-- claims-table:end --> has no <!-- claims-table:begin id=<id> --> before it'));
+  }
+  for (const b of p.tables.blocks) {
+    const spec = specs.get(b.begin.id), at = (code, message) => out.push(finding(file, b.begin.line, code, message));
+    if (!spec) { at('TABLE_UNKNOWN', `claims-table "${b.begin.id}" is not in ${CLAIMS_FILE} tables[]`); continue; }
+    if (project !== undefined && spec.project !== project) { at('TABLE_UNKNOWN', `claims-table "${spec.id}" belongs to project "${spec.project}", not "${project}"`); continue; }
+    const r = renderTable(spec, byId);
+    for (const f of r.findings) at(f.code, f.message);
+    if (r.text === null) continue;
+    // The indent is the run of spaces and tabs before the begin comment, when nothing else precedes it on its line.
+    let k = b.begin.start;
+    while (k > 0 && (src[k - 1] === ' ' || src[k - 1] === '\t')) k -= 1;
+    const indent = k === lt.start(lt.lineOf(b.begin.start)) ? src.slice(k, b.begin.start) : '';
+    const body = `\n${r.text.split('\n').map((l) => indent + l).join('\n')}\n${indent}`;
+    renders.push({ block: b, spec, text: r.text, body, firstLine: lt.lineOf(b.begin.end) });
+  }
+  return { findings: out, renders, byId };
+}
+
+// checkTables(text, file, doc, { project }) -> { findings, markers }. Check mode: compares every block with its
+// render (TABLE_DRIFT at the first differing line; TABLE_UNKNOWN, TABLE_EMPTY, TABLE_UNTERMINATED, TABLE_SPEC,
+// CLAIM_UNKNOWN, CLAIM_NOT_APPROVED from the spec). markers are the claim cells of each rendered row (value, and
+// spread for value+spread) for checkTagged, which verifies the display strings against the values and evidence.
+export function checkTables(text, file = '', doc = {}, { project } = {}) {
+  if (byteLength(text) > MAX_INPUT_BYTES) return { findings: [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)], markers: [] };
+  const src = lf(text).normalize('NFC'), { findings, renders, byId } = tableBlocks(src, file, doc, project), markers = [];
+  for (const { block, spec, text: table, body, firstLine } of renders) {
+    const have = src.slice(block.begin.end, block.end.start).split('\n'), want = body.normalize('NFC').split('\n');
+    let k = 0;
+    while (k < have.length && k < want.length && have[k] === want[k]) k += 1;
+    if (k < have.length || k < want.length) {
+      findings.push(finding(file, firstLine + k, 'TABLE_DRIFT', `claims-table "${spec.id}" differs from its render from ${CLAIMS_FILE} tables[]; run node tools/check-claims.mjs --render-tables ${spec.project}=<README>`));
+    }
+    const rowText = table.split('\n');
+    spec.rows.forEach((row, i) => row.cells.forEach((cell) => {
+      if (!isStr(cell?.claim)) return;
+      const claim = byId.get(cell.claim), line = firstLine + 3 + i, context = fold(rowText[2 + i]);
+      markers.push({ file, id: claim.id, field: 'value', text: fold(claim.display.value[0]), line, context });
+      if (cell.format === 'value+spread') markers.push({ file, id: claim.id, field: 'spread', text: fold(claim.display.spread[0]), line, context });
+    }));
+  }
+  return { findings: findings.sort((a, b) => a.line - b.line), markers };
+}
+
+// applyTables(text, file, doc, { project }) -> { text, findings, rendered, changed }: the README with every
+// claims-table block re-rendered. Only line ends are normalized (no NFC), so bytes outside the blocks are kept,
+// and a CRLF file comes back CRLF. Pure: the caller decides whether to write, and must not write when there
+// are findings.
+export function applyTables(text, file = '', doc = {}, { project } = {}) {
+  if (byteLength(text) > MAX_INPUT_BYTES) return { text, findings: [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)], rendered: 0, changed: false };
+  const crlf = String(text).includes('\r\n'), src = String(text).replace(/\r\n/g, '\n');
+  const { findings, renders } = tableBlocks(src, file, doc, project), parts = [];
+  let at = 0;
+  for (const r of renders) { parts.push(src.slice(at, r.block.begin.end), r.body); at = r.block.end.start; }
+  parts.push(src.slice(at));
+  const next = crlf ? parts.join('').replace(/\n/g, '\r\n') : parts.join('');
+  return { text: next, findings, rendered: renders.length, changed: next !== text };
+}
+
+// ---------- Methodology ----------
+// BENCH-04: each README states how its numbers were measured, in a block with these five labels, each at the start
+// of a line or list item (bold allowed). The labels are the planner's reading of BENCH-04; the owner reviews the text.
+export const METHODOLOGY_LABELS = Object.freeze(['Warm-up:', 'Timer:', 'Repetitions:', 'Outliers:', 'Noise control:']);
+const LABEL_LINES = METHODOLOGY_LABELS.map((label) => [label,
+  new RegExp(String.raw`^[ \t]*(?:[-*+][ \t]+|\d{1,9}[.)][ \t]+)?(?:\*\*|__)?` + label + String.raw`(?:\*\*|__)?(.*)$`, 'm')]);
+
+// checkMethodology(text, file) -> findings (METHODOLOGY_MISSING, METHODOLOGY_FIELD, INPUT_TOO_LARGE). The numbers
+// inside the block are scanned by scanMarkdown like any other README text.
+export function checkMethodology(text, file = '') {
+  if (byteLength(text) > MAX_INPUT_BYTES) return [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)];
+  const src = lf(text).normalize('NFC'), { methodology } = mdParse(src), lineOf = lineIndex(src), out = [];
+  if (!methodology.blocks.length) {
+    const open = methodology.unmatched.find((c) => c.kind === 'method-begin');
+    return [finding(file, open ? open.line : 1, 'METHODOLOGY_MISSING', open
+      ? '<!-- bench-methodology:begin --> has no <!-- bench-methodology:end -->'
+      : `no <!-- bench-methodology:begin --> ... <!-- bench-methodology:end --> block (BENCH-04: ${METHODOLOGY_LABELS.join(' ')})`)];
+  }
+  for (const { begin, end } of methodology.blocks) {
+    const body = src.slice(begin.end, end.start);
+    for (const [label, re] of LABEL_LINES) {
+      const m = re.exec(body);
+      if (!m) out.push(finding(file, begin.line, 'METHODOLOGY_FIELD', `the bench-methodology block has no "${label}" line (at the start of a line or list item)`));
+      else if (!m[1].trim()) out.push(finding(file, lineOf(begin.end + m.index), 'METHODOLOGY_FIELD', `"${label}" in the bench-methodology block has no text after it`));
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
 }
 
 // ---------- Schema ----------
@@ -1005,6 +1380,511 @@ export async function validateResultsDir(dir, { readFile, readdir, label = dir }
   if (!found.length) findings.push(finding(shown, 1, 'RESULTS_EMPTY', 'no environment directory (windows-native, ubuntu-wsl2 or one holding meta.json) below this path'));
   for (const e of found) findings.push(...await envFindings(e.dir, e.label, { readFile, readdir }));
   return { findings, checked: found.map((e) => e.label) };
+}
+
+// ---------- Pins ----------
+// CLAIM-06 / D-18: every upstream commit a page pins must be reachable from that repo's default branch.
+// Two pin shapes: a GitHub permalink (the repo comes from the URL) and a short SHA in <code>…</code> (the repo
+// comes from page_repos[<page basename>]). Comments are blanked first, so a commented-out link is not a pin.
+const PERMALINK = /https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)\/(?:blob|tree|commit)\/([0-9a-f]{7,40})(?![0-9A-Za-z])/g;
+const SHORT_PIN = /<code(?:\s[^<>]*)?>([0-9a-f]{7,40})<\/code>/g;
+const PIN_SHA = /^[0-9a-f]{7,40}$/;
+const pageName = (file) => String(file).replace(/\\/g, '/').split('/').pop().replace(/\.html$/i, '');
+
+// extractPins(html, file, doc) -> { pins: [{ repo, sha, file, line, kind: 'permalink' | 'short' }], findings }.
+// A short SHA on a page that page_repos does not map, or a permalink naming a repo (or owner) that repos does
+// not list, is PIN_UNKNOWN_REPO: a pin the checker cannot resolve fails rather than being skipped.
+export function extractPins(html, file = '', doc = {}) {
+  const src = blankComments(String(html)), lineOf = lineIndex(src), pins = [], findings = [];
+  const repos = isObj(doc?.repos) ? doc.repos : {}, pageRepos = isObj(doc?.page_repos) ? doc.page_repos : {};
+  for (const m of src.matchAll(PERMALINK)) {
+    const [, owner, repo, sha] = m, line = lineOf(m.index);
+    if (Object.hasOwn(repos, repo) && repos[repo]?.owner === owner) pins.push({ repo, sha, file, line, kind: 'permalink' });
+    else findings.push(finding(file, line, 'PIN_UNKNOWN_REPO', `github.com/${owner}/${repo} (pinned at ${sha.slice(0, 7)}) is not a repo in ${CLAIMS_FILE}`));
+  }
+  const page = pageName(file), repo = Object.hasOwn(pageRepos, page) ? pageRepos[page] : undefined;
+  for (const m of src.matchAll(SHORT_PIN)) {
+    const sha = m[1], line = lineOf(m.index);
+    if (typeof repo === 'string' && Object.hasOwn(repos, repo)) pins.push({ repo, sha, file, line, kind: 'short' });
+    else findings.push(finding(file, line, 'PIN_UNKNOWN_REPO', `<code>${sha}</code> is on page "${page}", which page_repos in ${CLAIMS_FILE} does not map to a repo`));
+  }
+  return { pins, findings };
+}
+
+// mapLimit(items, limit, fn) -> results in input order, whatever order the calls finish in.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return out;
+}
+
+// A reachability result (from createSources(...).isReachable):
+//   { state: 'reachable', ref, status } | { state: 'unreachable', ref, status } | { state: 'unknown', reason }.
+// unknown (network error, timeout, rate limit, any other failure) is COULD_NOT_VERIFY: never a pass (T-02-09).
+async function reachOf(isReachable, repo, sha) {
+  try {
+    const r = await isReachable(repo, sha);
+    return r && ['reachable', 'unreachable', 'unknown'].includes(r.state) ? r : { state: 'unknown', reason: 'no reachability result' };
+  } catch {
+    return { state: 'unknown', reason: 'the reachability check failed' };
+  }
+}
+
+// checkPins(pins, { isReachable }) -> Promise<findings>. Each distinct repo@sha is queried once (at most
+// `concurrency` at a time) and its result is reported at every location that pins it, in file and line order.
+export async function checkPins(pins, { isReachable, concurrency = 4 } = {}) {
+  const keys = [...new Set(pins.map((p) => `${p.repo}@${p.sha}`))].sort();
+  const results = new Map(await mapLimit(keys, concurrency, async (key) => {
+    const at = key.lastIndexOf('@');
+    return [key, await reachOf(isReachable, key.slice(0, at), key.slice(at + 1))];
+  }));
+  const out = [];
+  for (const p of pins) {
+    const r = results.get(`${p.repo}@${p.sha}`);
+    if (r.state === 'unreachable') out.push(finding(p.file, p.line, 'PIN_UNREACHABLE', `${p.repo}@${p.sha} is not reachable from ${r.ref} (${r.status})`));
+    else if (r.state === 'unknown') out.push(finding(p.file, p.line, 'COULD_NOT_VERIFY', `${p.repo}@${p.sha}: reachability not verified (${r.reason})`));
+  }
+  return sortFindings(out);
+}
+
+// ---------- GitHub ----------
+// Read-only GitHub calls with an injected fetch. The token goes only into the Authorization header of
+// api.github.com requests and never into a message; a reason names the URL path and the HTTP status only (T-02-06).
+// A response whose final URL is not on one of the two hosts below is rejected (T-02-08).
+const GITHUB_HOSTS = Object.freeze(['api.github.com', 'raw.githubusercontent.com']);
+const FETCH_TIMEOUT_MS = 15000;
+const COMPARE_STATUSES = Object.freeze(['identical', 'behind', 'ahead', 'diverged']);
+const GIT_REF = /^(?!-)(?!.*\.\.)[A-Za-z0-9._\/-]+$/;
+const enc = encodeURIComponent;
+
+// Reads a body up to `cap` bytes; a larger body is cancelled and reported, never buffered whole.
+async function readCapped(res, cap = MAX_INPUT_BYTES) {
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    const text = await res.text();
+    return byteLength(text) > cap ? { tooLarge: true } : { text };
+  }
+  const reader = res.body.getReader(), chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > cap) { await reader.cancel().catch(() => { /* already closed */ }); return { tooLarge: true }; }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.byteLength; }
+  return { text: new TextDecoder().decode(all) };
+}
+
+const rateLimited = (res, text) => (res.status === 403 || res.status === 429)
+  && (res.headers?.get?.('x-ratelimit-remaining') === '0' || /rate limit/i.test(text ?? ''));
+
+// githubGet(url, { fetchImpl, token }) -> { ok: true, status, text } | { ok: false, status, reason, tooLarge? }.
+async function githubGet(url, { fetchImpl = fetch, token } = {}) {
+  const u = new URL(url), where = u.pathname;
+  const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'portfolio-claims-check', 'X-GitHub-Api-Version': '2022-11-28' };
+  if (token && u.host === 'api.github.com') headers.Authorization = `Bearer ${token}`;
+  let res, body;
+  try {
+    res = await fetchImpl(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    let host = '';
+    try { host = new URL(res.url).host; } catch { /* no final URL: rejected just below */ }
+    if (!GITHUB_HOSTS.includes(host)) return { ok: false, status: res.status ?? 0, reason: `${where}: the response came from an unexpected host` };
+    body = await readCapped(res);
+  } catch (err) {
+    const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+    const cause = typeof err?.cause?.code === 'string' && /^[A-Z_]+$/.test(err.cause.code) ? `, ${err.cause.code}` : '';
+    return { ok: false, status: 0, reason: `${where}: ${timedOut ? `no response within ${FETCH_TIMEOUT_MS / 1000} s` : `network error${cause}`}` };
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, reason: `${where}: HTTP ${res.status}${rateLimited(res, body.text) ? ' (rate limited; set GITHUB_TOKEN)' : ''}` };
+  }
+  if (body.tooLarge) return { ok: false, status: res.status, tooLarge: true, reason: `${where}: larger than ${MAX_INPUT_BYTES} bytes` };
+  return { ok: true, status: res.status, text: body.text };
+}
+
+async function githubJson(url, opts) {
+  const r = await githubGet(url, opts);
+  if (!r.ok) return r;
+  try {
+    return { ok: true, status: r.status, json: JSON.parse(r.text) };
+  } catch {
+    return { ok: false, status: r.status, reason: `${new URL(url).pathname}: the response is not JSON` };
+  }
+}
+
+// githubDefaultBranch(owner, repo) -> { ok: true, branch } | { ok: false, status, reason }.
+export async function githubDefaultBranch(owner, repo, { fetchImpl = fetch, token } = {}) {
+  const r = await githubJson(`https://api.github.com/repos/${enc(owner)}/${enc(repo)}`, { fetchImpl, token });
+  if (!r.ok) return r;
+  const branch = r.json?.default_branch;
+  return typeof branch === 'string' && GIT_REF.test(branch) ? { ok: true, branch }
+    : { ok: false, status: r.status, reason: `/repos/${owner}/${repo}: no usable default_branch in the response` };
+}
+
+// githubCompare(owner, repo, base, head) -> { ok: true, status: identical | behind | ahead | diverged }
+// | { ok: false, status: <HTTP status, 0 for no response>, reason }. GET /repos/{o}/{r}/compare/{base}...{head}.
+export async function githubCompare(owner, repo, base, head, { fetchImpl = fetch, token } = {}) {
+  if (!GIT_REF.test(String(base)) || !PIN_SHA.test(String(head))) return { ok: false, status: 0, reason: `not a branch and commit pair: ${base}...${head}` };
+  const r = await githubJson(`https://api.github.com/repos/${enc(owner)}/${enc(repo)}/compare/${base}...${head}?per_page=1`, { fetchImpl, token });
+  if (!r.ok) return r;
+  const status = r.json?.status;
+  return COMPARE_STATUSES.includes(status) ? { ok: true, status }
+    : { ok: false, status: r.status, reason: `/repos/${owner}/${repo}/compare: unexpected status ${JSON.stringify(status)}` };
+}
+
+// API reachability (D-18): identical or behind passes; ahead and diverged fail; a 404 or 422 (unknown or
+// ambiguous short SHA) fails naming the HTTP status; anything else is unknown. The default branch is read
+// from GitHub once per repo and must equal repos.<repo>.default_branch, so the two can't silently disagree.
+function githubReachability(repos, { fetchImpl = fetch, token } = {}) {
+  const branches = new Map(), results = new Map();
+  const branchOf = (repo) => memo(branches, repo, async () => {
+    const b = await githubDefaultBranch(repos[repo].owner, repo, { fetchImpl, token });
+    if (b.ok && b.branch !== repos[repo].default_branch) {
+      return { ok: false, reason: `GitHub's default branch is ${b.branch}, but repos.${repo}.default_branch is ${repos[repo].default_branch}` };
+    }
+    return b;
+  });
+  const isReachable = (repo, sha) => memo(results, `${repo}@${sha}`, async () => {
+    if (!isObj(repos[repo]) || !PIN_SHA.test(String(sha))) return { state: 'unknown', reason: `not a known repo and commit: ${repo}@${sha}` };
+    const b = await branchOf(repo);
+    if (!b.ok) return { state: 'unknown', reason: b.reason };
+    const c = await githubCompare(repos[repo].owner, repo, b.branch, sha, { fetchImpl, token });
+    if (c.ok) return { state: c.status === 'identical' || c.status === 'behind' ? 'reachable' : 'unreachable', ref: b.branch, status: `compare status ${c.status}` };
+    if (c.status === 404 || c.status === 422) return { state: 'unreachable', ref: b.branch, status: `HTTP ${c.status}` };
+    return { state: 'unknown', reason: c.reason };
+  });
+  return { branchOf, isReachable };
+}
+const memo = (map, key, make) => { if (!map.has(key)) map.set(key, make()); return map.get(key); };
+
+// ---------- Sources ----------
+// Where upstream READMEs, evidence files and reachability come from (D-19):
+//   api            GitHub: README.md at the default-branch HEAD, evidence from raw.githubusercontent.com at
+//                  evidence.sha, reachability through the compare endpoint (CI and the default local run).
+//   local          sibling clones <dir>/<repo>: README.md from the working tree, evidence through
+//                  git show <sha>:<path>, reachability through git merge-base --is-ancestor <sha> <ref>.
+//   evidence-root  the plan 02-01 fixture seam: evidence from <dir>/<repo>/<sha>/<path>; a SHA is reachable when
+//                  <dir>/<repo>/<sha>/ exists; there is no README source (use --readme-file).
+// createSources(mode, opts) -> { mode, readReadme(repo), readEvidence(repo, sha, path), isReachable(repo, sha) }.
+// The readers return text or reject with a SourceError whose code is NOT_FOUND, INPUT_TOO_LARGE,
+// COULD_NOT_VERIFY or NO_SOURCE. git runs through execFile with an argument array, never through a shell.
+class SourceError extends Error {
+  constructor(code, message) { super(message); this.code = code; }
+}
+const SOURCE_CODES = Object.freeze(['INPUT_TOO_LARGE', 'COULD_NOT_VERIFY']);
+const REPO_NAME = /^(?!\.{1,2}$)[A-Za-z0-9._-]+$/;
+const GIT_TIMEOUT_MS = 15000;
+const firstLine = (s) => String(s ?? '').trim().split(/\r?\n/)[0].slice(0, 200);
+const sha7 = (s) => String(s).slice(0, 7);
+const tooLarge = (what) => new SourceError('INPUT_TOO_LARGE', `${what} is larger than ${MAX_INPUT_BYTES} bytes`);
+const shaAndPath = (sha, rel) => {
+  if (!PIN_SHA.test(String(sha))) throw new SourceError('NOT_FOUND', `not a commit SHA: ${sha}`);
+  if (!safePath(rel)) throw new SourceError('NOT_FOUND', `not a repo-relative path: ${rel}`);
+};
+
+// The default execFile: resolves { code, stdout (bytes), stderr, tooLarge }; never rejects.
+function runGit(file, args) {
+  return new Promise((resolve) => {
+    nodeExecFile(file, args, { encoding: 'buffer', maxBuffer: MAX_INPUT_BYTES + 1, timeout: GIT_TIMEOUT_MS, windowsHide: true },
+      (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : null) : 0,
+        stdout: stdout ?? new Uint8Array(0), stderr: String(stderr ?? ''), tooLarge: err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }));
+  });
+}
+
+export function createSources(mode, opts = {}) {
+  if (mode === 'api') return apiSources(opts);
+  if (mode === 'local') return localSources(opts);
+  if (mode === 'evidence-root') return rootSources(opts);
+  throw new Error(`unknown source mode "${mode}"`);
+}
+
+function apiSources({ repos = {}, fetchImpl = fetch, token } = {}) {
+  const { branchOf, isReachable } = githubReachability(repos, { fetchImpl, token });
+  const files = new Map();
+  const segs = (p) => String(p).split('/').map(enc).join('/');
+  // raw.githubusercontent.com gets no token: the repos are public, and the token stays with api.github.com.
+  const raw = (repo, ref, rel) => memo(files, `${repo}@${ref}:${rel}`, async () => {
+    const r = await githubGet(`https://raw.githubusercontent.com/${enc(repos[repo].owner)}/${enc(repo)}/${segs(ref)}/${segs(rel)}`, { fetchImpl });
+    if (r.ok) return r.text;
+    throw new SourceError(r.tooLarge ? 'INPUT_TOO_LARGE' : r.status === 404 ? 'NOT_FOUND' : 'COULD_NOT_VERIFY', r.reason);
+  });
+  const known = (repo) => { if (!isObj(repos[repo])) throw new SourceError('COULD_NOT_VERIFY', `${repo} is not a repo in ${CLAIMS_FILE}`); };
+  return {
+    mode: 'api',
+    async readReadme(repo) {
+      known(repo);
+      const b = await branchOf(repo);
+      if (!b.ok) throw new SourceError('COULD_NOT_VERIFY', b.reason);
+      return raw(repo, b.branch, 'README.md');
+    },
+    async readEvidence(repo, sha, rel) {
+      known(repo);
+      shaAndPath(sha, rel);
+      return raw(repo, sha, rel);
+    },
+    isReachable,
+  };
+}
+
+function localSources({ dir, ref = 'HEAD', execFileImpl = runGit, readFileImpl = fsReadFile } = {}) {
+  if (typeof dir !== 'string' || dir === '') throw new Error('local mode needs the directory that holds the clones');
+  if (!GIT_REF.test(String(ref))) throw new Error(`not a usable git ref: ${ref}`);
+  const repoDir = (repo) => {
+    if (!REPO_NAME.test(String(repo))) throw new SourceError('COULD_NOT_VERIFY', `not a repo name: ${repo}`);
+    return path.join(dir, repo);
+  };
+  const git = async (repo, args) => {
+    try {
+      return await execFileImpl('git', ['-C', repoDir(repo), ...args]);
+    } catch (err) {
+      if (err instanceof SourceError) throw err;
+      return { code: null, stdout: new Uint8Array(0), stderr: 'git could not be run' };
+    }
+  };
+  const results = new Map();
+  return {
+    mode: 'local',
+    async readReadme(repo) {
+      const file = path.join(repoDir(repo), 'README.md');
+      let text;
+      try {
+        text = await readFileImpl(file, 'utf8');
+      } catch (err) {
+        throw new SourceError(err?.code === 'ENOENT' ? 'NOT_FOUND' : 'COULD_NOT_VERIFY', `cannot read ${file} (${err?.code ?? 'error'})`);
+      }
+      if (byteLength(text) > MAX_INPUT_BYTES) throw tooLarge(file);
+      return text;
+    },
+    async readEvidence(repo, sha, rel) {
+      shaAndPath(sha, rel);
+      const r = await git(repo, ['show', `${sha}:${rel}`]);
+      if (r.tooLarge) throw tooLarge(`${repo}@${sha7(sha)}:${rel}`);
+      if (r.code !== 0) {
+        const missing = /does not exist in|exists on disk, but not in/.test(r.stderr);
+        throw new SourceError(missing ? 'NOT_FOUND' : 'COULD_NOT_VERIFY', `git show ${sha7(sha)}:${rel} in ${repo} failed: ${firstLine(r.stderr) || `exit ${r.code}`}`);
+      }
+      const text = new TextDecoder().decode(r.stdout);
+      if (byteLength(text) > MAX_INPUT_BYTES) throw tooLarge(`${repo}@${sha7(sha)}:${rel}`);
+      return text;
+    },
+    isReachable: (repo, sha) => memo(results, `${repo}@${sha}`, async () => {
+      if (!PIN_SHA.test(String(sha))) return { state: 'unknown', reason: `not a commit SHA: ${sha}` };
+      let r;
+      try { r = await git(repo, ['merge-base', '--is-ancestor', sha, ref]); } catch (err) { return { state: 'unknown', reason: err.message }; }
+      if (r.code === 0) return { state: 'reachable', ref, status: 'ancestor' };
+      if (r.code === 1) return { state: 'unreachable', ref, status: `git merge-base: not an ancestor of ${ref}` };
+      return { state: 'unknown', reason: `git merge-base in ${repo} exited ${r.code ?? 'abnormally'}${r.stderr ? `: ${firstLine(r.stderr)}` : ''}` };
+    }),
+  };
+}
+
+function rootSources({ dir, readFileImpl = fsReadFile, readdirImpl = fsReaddir } = {}) {
+  if (typeof dir !== 'string' || dir === '') throw new Error('evidence-root mode needs a directory');
+  const base = path.resolve(dir);
+  return {
+    mode: 'evidence-root',
+    async readReadme() {
+      throw new SourceError('NO_SOURCE', 'evidence-root mode has no README source; pass --readme-file <project>=<path>');
+    },
+    async readEvidence(repo, sha, rel) {
+      if (!REPO_NAME.test(String(repo))) throw new SourceError('NOT_FOUND', `not a repo name: ${repo}`);
+      shaAndPath(sha, rel);
+      const file = path.resolve(base, String(repo), String(sha), ...String(rel).split('/'));
+      if (!file.startsWith(base + path.sep)) throw new SourceError('NOT_FOUND', 'evidence path escapes the evidence root');
+      let text;
+      try {
+        text = await readFileImpl(file, 'utf8');
+      } catch (err) {
+        throw new SourceError(err?.code === 'ENOENT' ? 'NOT_FOUND' : 'COULD_NOT_VERIFY', err?.message ?? 'read failed');
+      }
+      if (byteLength(text) > MAX_INPUT_BYTES) throw tooLarge(rel);
+      return text;
+    },
+    async isReachable(repo, sha) {
+      if (!REPO_NAME.test(String(repo)) || !PIN_SHA.test(String(sha))) return { state: 'unknown', reason: `not a repo and commit: ${repo}@${sha}` };
+      let entries;
+      try {
+        entries = await readdirImpl(path.join(base, repo), { withFileTypes: true });
+      } catch (err) {
+        if (err?.code !== 'ENOENT') return { state: 'unknown', reason: `cannot list the evidence root (${err?.code ?? 'error'})` };
+        entries = [];
+      }
+      const found = entries.some((e) => e.isDirectory() && SHA_RE.test(e.name) && e.name.startsWith(sha));
+      return found ? { state: 'reachable', ref: 'the evidence root', status: 'commit directory' }
+        : { state: 'unreachable', ref: 'the evidence root', status: 'no commit directory' };
+    },
+  };
+}
+
+// ---------- Evidence ----------
+// checkEvidence(doc, sources, { text, file, project }) -> Promise<findings> for every proposed or approved claim
+// with evidence (retired ones are no longer shown). evidence.sha and source_sha go through the same reachability as
+// page pins, so a squash or rebase that orphans either fails (PIN_UNREACHABLE). A pointer claim also reads
+// meta.json next to its summary.json at evidence.sha: meta.source.sha must be source_sha (EVIDENCE_SOURCE_SHA),
+// and the stats object must carry the claim's measure and build (EVIDENCE_LABEL). A pattern claim's single
+// capture group, read from the file at evidence.sha, must parse to value (EVIDENCE_PATTERN).
+const metaPathOf = (p) => `${String(p).replace(/[^/]*$/, '')}meta.json`;
+
+async function readEvidenceJson(readEvidence, ev, rel) {
+  let text;
+  try {
+    text = await readEvidence(ev.repo, ev.sha, rel);
+  } catch (err) {
+    return { code: SOURCE_CODES.includes(err?.code) ? err.code : 'NOT_FOUND', reason: `cannot read ${ev.repo}@${sha7(ev.sha)}:${rel} (${err?.message})` };
+  }
+  if (byteLength(text) > MAX_INPUT_BYTES) return { code: 'INPUT_TOO_LARGE', reason: `${rel} is larger than ${MAX_INPUT_BYTES} bytes` };
+  try {
+    return { json: JSON.parse(text) };
+  } catch {
+    return { code: 'NOT_JSON', reason: `${rel} at ${sha7(ev.sha)} is not valid JSON` };
+  }
+}
+const failCode = (code, fallback) => (SOURCE_CODES.includes(code) ? code : fallback);
+
+async function pointerEvidence(c, readEvidence, at) {
+  const ev = c.evidence, s = await readEvidenceJson(readEvidence, ev, ev.path);
+  if (!s.json) return [at(failCode(s.code, 'EVIDENCE_POINTER'), s.reason)];
+  const stats = resolvePointer(s.json, ev.pointer);
+  if (!isObj(stats)) return [at('EVIDENCE_POINTER', `pointer ${ev.pointer} does not resolve to a stats object in ${ev.path} at ${sha7(ev.sha)}`)];
+  const out = [];
+  for (const k of ['measure', 'build']) {
+    if (stats[k] !== c[k]) out.push(at('EVIDENCE_LABEL', `the evidence stats have ${k} ${stats[k]}, but the claim has ${k} ${c[k]}`));
+  }
+  const m = await readEvidenceJson(readEvidence, ev, metaPathOf(ev.path));
+  if (!m.json) out.push(at(failCode(m.code, 'EVIDENCE_SOURCE_SHA'), `no readable meta.json next to ${ev.path}: ${m.reason}`));
+  else if (m.json?.source?.sha !== c.source_sha) {
+    out.push(at('EVIDENCE_SOURCE_SHA', `meta.json source.sha ${sha7(m.json?.source?.sha)} is not the claim's source_sha ${sha7(c.source_sha)}`));
+  }
+  return out;
+}
+
+async function patternEvidence(c, readEvidence, at) {
+  const ev = c.evidence;
+  let text, re;
+  try {
+    text = await readEvidence(ev.repo, ev.sha, ev.path);
+  } catch (err) {
+    return [at(failCode(err?.code, 'EVIDENCE_PATTERN'), `cannot read ${ev.repo}@${sha7(ev.sha)}:${ev.path} (${err?.message})`)];
+  }
+  if (byteLength(text) > MAX_INPUT_BYTES) return [at('INPUT_TOO_LARGE', `${ev.path} is larger than ${MAX_INPUT_BYTES} bytes`)];
+  try { re = new RegExp(ev.pattern); } catch { return [at('EVIDENCE_PATTERN', 'evidence.pattern does not compile')]; }
+  const m = re.exec(text), got = m?.[1];
+  if (typeof got !== 'string') return [at('EVIDENCE_PATTERN', `evidence.pattern has no match in ${ev.path} at ${sha7(ev.sha)}`)];
+  const digits = got.replace(/[,_\s]/g, ''), n = Number(digits);
+  if (/^[+-]?\d/.test(digits) && n === c.value) return [];
+  return [at('EVIDENCE_PATTERN', `evidence.pattern captures "${got.slice(0, 40)}" in ${ev.path}, but value is ${c.value}`)];
+}
+
+async function claimEvidence(c, sources, at) {
+  const ev = c.evidence, out = [];
+  for (const [label, repo, sha] of [['evidence.sha', ev.repo, ev.sha], ['source_sha', c.project, c.source_sha]]) {
+    if (!SHA_RE.test(String(sha ?? ''))) continue;   // validateClaims reports a malformed SHA
+    const r = await reachOf(sources.isReachable, repo, sha);
+    if (r.state === 'unreachable') out.push(at('PIN_UNREACHABLE', `${label} ${sha7(sha)} is not reachable from ${r.ref} (${r.status})`));
+    else if (r.state === 'unknown') out.push(at('COULD_NOT_VERIFY', `${label} ${sha7(sha)}: reachability not verified (${r.reason})`));
+  }
+  if (!SHA_RE.test(String(ev.sha ?? '')) || !safePath(ev.path)) return out;
+  if (typeof ev.pointer === 'string') out.push(...await pointerEvidence(c, sources.readEvidence, at));
+  else if (typeof ev.pattern === 'string') out.push(...await patternEvidence(c, sources.readEvidence, at));
+  return out;
+}
+
+export async function checkEvidence(doc, sources, { text, file = CLAIMS_FILE, project, concurrency = 4 } = {}) {
+  const claims = Array.isArray(doc?.claims) ? doc.claims : [], lines = locateClaims(text, claims);
+  const jobs = claims.map((c, i) => ({ c, line: lines[i] })).filter(({ c }) => isObj(c) && isObj(c.evidence)
+    && c.status !== 'retired' && (project === undefined || c.project === project));
+  const results = await mapLimit(jobs, concurrency, ({ c, line }) => claimEvidence(c, sources, (code, msg) => finding(file, line, code, `${c.id}: ${msg}`)));
+  return sortFindings(results.flat());
+}
+
+// ---------- Fill values ----------
+// fillValues(doc, readEvidence) -> { doc, changed: [claim index], findings }. For each proposed pointer claim, copies
+// value (stats[stat]), n (stats.n) and spread low/high (the stats keys spread.kind names) from its evidence, so a
+// claim value is never typed by hand. Approved and retired entries are passed through as the same objects: once
+// the owner approves an entry, no tool rewrites it (D-02). The input document is not mutated.
+export async function fillValues(doc, readEvidence, { text, file = CLAIMS_FILE } = {}) {
+  const claims = Array.isArray(doc?.claims) ? doc.claims : [], lines = locateClaims(text, claims);
+  const next = [...claims], changed = [], findings = [], reads = new Map();
+  for (let i = 0; i < claims.length; i++) {
+    const c = claims[i];
+    if (!isObj(c) || c.status !== 'proposed' || !isObj(c.evidence) || typeof c.evidence.pointer !== 'string') continue;
+    const at = (code, msg) => findings.push(finding(file, lines[i], code, `${c.id}: ${msg}`)), ev = c.evidence;
+    const s = await memo(reads, `${ev.repo}@${ev.sha}:${ev.path}`, () => readEvidenceJson(readEvidence, ev, ev.path));
+    if (!s.json) { at(failCode(s.code, 'EVIDENCE_POINTER'), s.reason); continue; }
+    const stats = resolvePointer(s.json, ev.pointer), keys = SPREAD_KEYS[c.spread?.kind];
+    if (!isObj(stats)) { at('EVIDENCE_POINTER', `pointer ${ev.pointer} does not resolve to a stats object in ${ev.path}`); continue; }
+    if (!keys) { at('EVIDENCE_POINTER', `spread.kind must be one of ${Object.keys(SPREAD_KEYS).join(', ')} to fill the spread`); continue; }
+    const value = stats[c.stat], n = stats.n, low = stats[keys[0]], high = stats[keys[1]];
+    const lacking = [[String(c.stat), isNum(value)], ['n', isPosInt(n)], [keys[0], isNum(low)], [keys[1], isNum(high)]].filter(([, ok]) => !ok);
+    if (lacking.length) { at('EVIDENCE_POINTER', `the stats at ${ev.pointer} lack ${lacking.map(([k]) => k).join(', ')}`); continue; }
+    if (value === c.value && n === c.n && low === c.spread.low && high === c.spread.high) continue;
+    next[i] = { ...c, value, n, spread: { ...c.spread, low, high } };
+    changed.push(i);
+  }
+  return { doc: { ...doc, claims: next }, changed, findings };
+}
+
+// Offsets of each element of the top-level "claims" array in a JSON text (already known to parse).
+function claimSpans(text) {
+  const spans = [], LITERAL = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/y;
+  let i = 0;
+  const skip = () => { while (i < text.length && ' \t\r\n'.includes(text[i])) i++; };
+  const string = () => { const s = i++; while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1; i++; return text.slice(s, i); };
+  const value = (depth, collect) => {
+    skip();
+    if (text[i] === '"') { string(); return; }
+    if (text[i] === '{' || text[i] === '[') {
+      const close = text[i] === '{' ? '}' : ']', isObject = close === '}';
+      i++; skip();
+      if (text[i] === close) { i++; return; }
+      for (;;) {
+        skip();
+        let into = null;
+        if (isObject) {
+          const key = JSON.parse(string());
+          into = depth === 0 && key === 'claims' ? spans : null;
+          skip();
+          i++;   // ':'
+        }
+        skip();
+        const start = i;
+        value(depth + 1, into);
+        if (collect) collect.push({ start, end: i });
+        skip();
+        const sep = text[i++];
+        if (sep === close) return;
+        if (sep !== ',') throw new Error(`unexpected character at offset ${i - 1}`);
+      }
+    }
+    LITERAL.lastIndex = i;
+    const m = LITERAL.exec(text);
+    if (!m) throw new Error(`unexpected character at offset ${i}`);
+    i += m[0].length;
+  };
+  value(0, null);
+  return spans;
+}
+
+// spliceClaims(text, doc, indices) -> the claims file text with only claims[i] (i in indices) re-serialized in place,
+// as 2-space JSON at the entry's own indentation and with the file's line ending. Every other byte is kept, so an
+// approved entry stays byte-identical. Throws when the result does not parse back to doc.
+export function spliceClaims(text, doc, indices) {
+  const spans = claimSpans(text), eol = text.includes('\r\n') ? '\r\n' : '\n';
+  let out = text;
+  for (const i of [...indices].sort((a, b) => b - a)) {
+    const span = spans[i];
+    if (!span) throw new Error(`claims[${i}] was not found in the claims file text`);
+    if (!isObj(doc?.claims?.[i])) throw new Error(`claims[${i}] was not found in the filled document`);
+    const lead = out.slice(out.lastIndexOf('\n', span.start - 1) + 1, span.start), indent = /^[ \t]*$/.test(lead) ? lead : '';
+    out = out.slice(0, span.start) + JSON.stringify(doc.claims[i], null, 2).replace(/\n/g, `${eol}${indent}`) + out.slice(span.end);
+  }
+  if (JSON.stringify(JSON.parse(out)) !== JSON.stringify(doc)) throw new Error('the rewritten claims file does not parse back to the filled document');
+  return out;
 }
 
 // ---------- Findings ----------

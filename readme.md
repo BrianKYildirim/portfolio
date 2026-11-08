@@ -115,6 +115,35 @@ Then open <http://localhost:8000> in your browser.
 4. Right-click `index.html`.
 5. Select **Open with Live Server**.
 
+## Checking performance claims
+
+Every performance figure on the site and in the upstream project READMEs must come from a reproducible measurement. `bench/claims.json` holds one entry per figure, and each entry points at the benchmark results it came from. A `data-claim` attribute in the HTML, or a `<!-- claim:id -->` marker in a README, ties each figure to its entry. Only entries the owner has approved may be shown.
+
+The checker needs **Node.js 22 or newer**. It uses Node built-ins only, so there is nothing to install (no `npm install`).
+
+```Shell
+# The checker's own tests
+node --test "tools/test/*.test.mjs"
+
+# Check everything against GitHub: the upstream READMEs at each default branch, the evidence files,
+# and every pinned commit. Set GITHUB_TOKEN to avoid GitHub's limit of 60 unauthenticated requests per hour.
+GITHUB_TOKEN=$(gh auth token) node tools/check-claims.mjs
+
+# The same check against the sibling clones next to this repo (offline, and before pushing upstream changes).
+# --local-ref origin/main checks pins against that ref instead of each clone's HEAD.
+node tools/check-claims.mjs --local ..
+```
+
+The checker exits 0 when everything checks out, 1 when it finds a problem, and 2 for a usage or I/O error. `--only <checks>` runs a subset (`claims`, `html`, `js`, `readme`, `tables`, `methodology`, `evidence`, `pins`), and `--project <repo>` limits the run to one project.
+
+Other commands:
+
+* `node tools/check-claims.mjs --validate-results <dir>` validates a benchmark results directory (`meta.json`, `summary.json` and the raw files).
+* `node tools/check-claims.mjs --render-tables <project>=<path>` regenerates the `claims-table` blocks in a README from `bench/claims.json`.
+* `node tools/check-claims.mjs --fill-values` copies each proposed claim's value, run count and spread from its evidence, so no number is typed by hand. It never changes an approved or retired entry.
+
+The same check runs in GitHub Actions on every push and pull request (`.github/workflows/claims.yml`).
+
 ## Customization
 
 To update the portfolio:

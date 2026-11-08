@@ -1,0 +1,34 @@
+# Checks every performance figure on the site and in the upstream READMEs against bench/claims.json and its
+# evidence, and checks that every pinned upstream commit is reachable from its default branch (D-17, D-18, D-19).
+# Third-party actions are pinned by full commit SHA (re-resolved from their tags on 2026-11-06).
+name: Claims check
+
+on:
+  push:
+  pull_request:
+  # Proposed for owner approval (RESEARCH Open Question 4): upstream README drift (D-19) is caught even when the
+  # portfolio does not change. Remove these two triggers to run on push and pull_request only.
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: '22'
+      - name: Checker tests
+        run: node --test "tools/test/*.test.mjs"
+      - name: Check claims
+        run: node tools/check-claims.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "repos": {
+    "ratelimit-cpp": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../ratelimit-cpp"
+    },
+    "image-quality-gate": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../image-quality-gate"
+    },
+    "key-value-storage": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../key-value-storage"
+    }
+  },
+  "page_repos": {
+    "rate-limiter": "ratelimit-cpp"
+  },
+  "environments": {
+    "windows-native": {
+      "label": "Windows 11, native"
+    },
+    "ubuntu-wsl2": {
+      "label": "Ubuntu on WSL2"
+    }
+  },
+  "tables": [
+    {
+      "id": "rl.fixture.example_run",
+      "project": "ratelimit-cpp",
+      "columns": [
+        "Scenario",
+        "1 thread"
+      ],
+      "rows": [
+        {
+          "cells": [
+            { "text": "One hot key, every call allowed (`Hot_Allowed`)" },
+            { "claim": "rl.fixture.hot_allowed.t1", "format": "value+spread" }
+          ]
+        },
+        {
+          "cells": [
+            { "text": "One hot key, almost every call denied (`Hot_Denied`)" },
+            { "claim": "rl.fixture.hot_denied.t1", "format": "value+spread" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rl.fixture.empty",
+      "project": "ratelimit-cpp",
+      "columns": [
+        "Scenario",
+        "1 thread"
+      ],
+      "rows": []
+    },
+    {
+      "id": "rl.fixture.proposed_table",
+      "project": "ratelimit-cpp",
+      "columns": [
+        "Scenario",
+        "1 thread"
+      ],
+      "rows": [
+        {
+          "cells": [
+            { "text": "Proposed" },
+            { "claim": "rl.fixture.proposed" }
+          ]
+        }
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "rl.fixture.clock_fast",
+      "project": "ratelimit-cpp",
+      "kind": "latency",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: one FastClock read, amortized over a Google Benchmark loop",
+      "value": 10.21,
+      "unit": "ns",
+      "stat": "median",
+      "n": 10,
+      "spread": {
+        "kind": "min-max",
+        "low": 10.05,
+        "high": 10.48
+      },
+      "measure": "amortized_per_op",
+      "build": "uninstrumented",
+      "environment": "windows-native",
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/windows-native/summary.json",
+        "pointer": "/rl_bench/BM_Clock_Fast/real_time_ns"
+      },
+      "source_sha": "0000000000000000000000000000000000000002",
+      "display": {
+        "value": [
+          "10.2 ns"
+        ],
+        "spread": [
+          "10.05–10.48 ns"
+        ],
+        "n": [
+          "10 runs"
+        ]
+      },
+      "label_required": null
+    },
+    {
+      "id": "rl.fixture.hot_allowed.t1",
+      "project": "ratelimit-cpp",
+      "kind": "throughput",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: rl.fixture.hot_allowed.t1",
+      "value": 36312345.6,
+      "unit": "calls/s",
+      "stat": "median",
+      "n": 10,
+      "spread": {
+        "kind": "min-max",
+        "low": 31012345,
+        "high": 37287654
+      },
+      "measure": "throughput",
+      "build": "uninstrumented",
+      "environment": "windows-native",
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/windows-native/summary.json",
+        "pointer": "/rl_bench/BM_Hot_Allowed.t1/wall_ops_s"
+      },
+      "source_sha": "0000000000000000000000000000000000000002",
+      "display": {
+        "value": [
+          "36.3M"
+        ],
+        "spread": [
+          "31.0–37.3M"
+        ]
+      },
+      "label_required": null
+    },
+    {
+      "id": "rl.fixture.hot_denied.t1",
+      "project": "ratelimit-cpp",
+      "kind": "throughput",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: rl.fixture.hot_denied.t1",
+      "value": 44512345.6,
+      "unit": "calls/s",
+      "stat": "median",
+      "n": 10,
+      "spread": {
+        "kind": "min-max",
+        "low": 41512345,
+        "high": 45187654
+      },
+      "measure": "throughput",
+      "build": "uninstrumented",
+      "environment": "windows-native",
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/windows-native/summary.json",
+        "pointer": "/rl_bench/BM_Hot_Denied.t1/wall_ops_s"
+      },
+      "source_sha": "0000000000000000000000000000000000000002",
+      "display": {
+        "value": [
+          "44.5M"
+        ],
+        "spread": [
+          "41.5–45.2M"
+        ]
+      },
+      "label_required": null
+    },
+    {
+      "id": "rl.fixture.proposed",
+      "project": "ratelimit-cpp",
+      "kind": "throughput",
+      "status": "proposed",
+      "approved_by": null,
+      "approved_on": null,
+      "statement": "Fixture: rl.fixture.proposed",
+      "value": 44512345.6,
+      "unit": "calls/s",
+      "stat": "median",
+      "n": 10,
+      "spread": {
+        "kind": "min-max",
+        "low": 41512345,
+        "high": 45187654
+      },
+      "measure": "throughput",
+      "build": "uninstrumented",
+      "environment": "windows-native",
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/windows-native/summary.json",
+        "pointer": "/rl_bench/BM_Hot_Denied.t1/wall_ops_s"
+      },
+      "source_sha": "0000000000000000000000000000000000000002",
+      "display": {
+        "value": [
+          "44.5M"
+        ]
+      },
+      "label_required": null
+    }
+  ]
+}

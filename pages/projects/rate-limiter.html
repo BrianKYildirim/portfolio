@@ -82,7 +82,8 @@
         aria-hidden="true"></span>
       <div class="pd-node">shard<small>hash bits 32+, 128 by default</small></div><span class="pd-edge"
         aria-hidden="true"></span>
-      <div class="pd-node">slot<small>linear probing, one 64-byte slot per cache line, keys ≤ 28 bytes inline</small>
+      <div class="pd-node">slot<small>linear probing, one <span data-claim="rl.design.slot_bytes">64-byte</span> slot
+          per cache line, keys ≤ <span data-claim="rl.design.inline_key_bytes">28 bytes</span> inline</small>
       </div><span class="pd-edge" aria-hidden="true"></span>
       <div class="pd-node">per-slot version lock<small>spin with exponential backoff, then yield</small></div><span
         class="pd-edge" aria-hidden="true"></span>
@@ -134,10 +135,10 @@ if (tokens &gt;= kUnit) {
   <div class="pd-sub">
     <h4 class="pd-h4">Denying without writing</h4>
     <div class="pd-prose">
-      <p>A denial less than 1 ms after the key's recorded time changes nothing, so a thread that recently saw a key
-        denied decides from a seqlock snapshot without taking the slot's lock. A flood of requests for one over-limit
-        key then leaves its cache line shared by every core instead of bouncing between them. Refill is linear and
-        exact, so skipping those writes changes no later verdict.</p>
+      <p>A denial less than <span data-claim="rl.design.quiet_denial_ms">1 ms</span> after the key's recorded time
+        changes nothing, so a thread that recently saw a key denied decides from a seqlock snapshot without taking the
+        slot's lock. A flood of requests for one over-limit key then leaves its cache line shared by every core instead
+        of bouncing between them. Refill is linear and exact, so skipping those writes changes no later verdict.</p>
     </div>
   </div>
 </section>
@@ -161,8 +162,9 @@ if (tokens &gt;= kUnit) {
             on one mutex, and every denial still writes.</li>
           <li><b>Write-intent prefetch.</b> Fetch the slot ready for writing before locking. Measured: it was slower on a hot
             key, because it takes the line away from every other core.</li>
-          <li><b>Per-slot spinlock + read-only denials.</b> A version lock inside each 64-byte slot, held for a few
-            dozen instructions, and quiet denials decided from a snapshot. <span class="pd-chosen">✓ chosen</span></li>
+          <li><b>Per-slot spinlock + read-only denials.</b> A version lock inside each <span
+              data-claim="rl.design.slot_bytes">64-byte</span> slot, held for a few dozen instructions, and quiet
+            denials decided from a snapshot. <span class="pd-chosen">✓ chosen</span></li>
         </ul>
       </dd>
     </div>
@@ -185,22 +187,55 @@ if (tokens &gt;= kUnit) {
 <section class="pd-section" id="pd-results" aria-labelledby="pd-results-h" data-toc="Results">
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
   <h3 class="pd-h3" id="pd-results-h" tabindex="-1">What the benchmarks measure</h3>
+  <ul class="pd-metrics">
+    <li><span class="v" data-claim="rl.hot_denied.t8.ubuntu-wsl2">153.3M</span><span class="l">calls per second on
+        one hot key that is over its limit, so almost every call is denied, at 8 threads on <span
+          data-claim="rl.hot_denied.t8.ubuntu-wsl2" data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="rl.hot_denied.t8.ubuntu-wsl2" data-claim-field="spread">116.7–178.2M</span></span><span
+        class="pd-src">median of <span data-claim="rl.hot_denied.t8.ubuntu-wsl2" data-claim-field="n">10
+          runs</span></span></li>
+    <li><span class="v" data-claim="rl.scaling.hot_denied.ubuntu-wsl2">3.5×</span><span class="l">as many denied
+        calls per second at 8 threads as at 1, on the same hot key, on <span
+          data-claim="rl.scaling.hot_denied.ubuntu-wsl2" data-claim-field="environment">Ubuntu on WSL2</span>; range
+        <span data-claim="rl.scaling.hot_denied.ubuntu-wsl2" data-claim-field="spread">2.5–3.9×</span></span><span
+        class="pd-src">median of <span data-claim="rl.scaling.hot_denied.ubuntu-wsl2" data-claim-field="n">10
+          runs</span></span></li>
+    <li><span class="v" data-claim="rl.memory.k1000000.short.ubuntu-wsl2">134.2</span><span class="l">heap bytes per
+        key with 1,000,000 short keys, counted by a heap-accounting allocator on <span
+          data-claim="rl.memory.k1000000.short.ubuntu-wsl2" data-claim-field="environment">Ubuntu on WSL2</span>;
+        range <span data-claim="rl.memory.k1000000.short.ubuntu-wsl2"
+          data-claim-field="spread">134.2–134.2</span></span><span class="pd-src">median of <span
+          data-claim="rl.memory.k1000000.short.ubuntu-wsl2" data-claim-field="n">10 runs</span></span></li>
+    <li><span class="v" data-claim="rl.hot_denied.t8.windows-native">50.9M</span><span class="l">calls per second on
+        the same hot-key workload on <span data-claim="rl.hot_denied.t8.windows-native"
+          data-claim-field="environment">Windows 11, native</span>, same laptop; range <span
+          data-claim="rl.hot_denied.t8.windows-native" data-claim-field="spread">35.4–67.7M</span>. Against the first
+        figure: <span data-claim="rl.cmp.hot_denied.t8">faster on Ubuntu on WSL2 by ~3.0×, medians of 10 runs
+          each</span></span><span class="pd-src">median of <span data-claim="rl.hot_denied.t8.windows-native"
+          data-claim-field="n">10 runs</span></span></li>
+  </ul>
   <div class="pd-prose">
     <p>The library has two benchmark programs: <code>rl_bench</code>, built on Google Benchmark, and
       <code>rl_latency</code>. Together they measure:</p>
     <ul>
       <li>throughput as <code>wall_ops/s</code> (all threads' calls divided by wall time) across thread counts, for
         one hot key, many shared keys and per-thread keys;</li>
-      <li>the time per call on a single thread, and the cost of inserting new keys;</li>
+      <li>the amortized time per call on a single thread (wall time divided by calls), and the cost of inserting new
+        keys;</li>
       <li>latency percentiles, from <code>rl_latency</code>;</li>
       <li>the overhead of read-only inspection with <code>inspect()</code>;</li>
       <li>memory per tracked key.</li>
     </ul>
+    <p>Each figure above is the median of 10 interleaved runs on one laptop, under Ubuntu on WSL2 (GCC 15.2,
+      <code>-O3</code>) and under native Windows 11 (MSVC 19.43, <code>/O2</code>), with the lowest and highest run as
+      its range. Why the hot-key workload is slower on Windows is a hypothesis, not verified: MSVC and GCC generate
+      different code, and under MSVC <code>FastClock</code> falls back to <code>steady_clock</code>.</p>
     <p>The README section <a
-        href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/6d436a88018b207211ae120fee4df1dc703c5dfe/README.md#performance-what-i-measured-and-how"
+        href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/eef537d7e8d48686dc88410bceb9dfecce95aa28/README.md#performance-what-i-measured-and-how"
         target="_blank" rel="noopener noreferrer">Performance: what I measured and how</a> describes how each
-      benchmark is run and on what machine, with an example run (as of <code>6d436a8</code>). The playground above
-      runs the decision logic in JavaScript on a simulated clock and measures nothing about native speed.</p>
+      benchmark is run, the method and both machines, with full tables for both environments (as of
+      <code>eef537d</code>). The playground above runs the decision logic in JavaScript on a simulated clock and
+      measures nothing about native speed.</p>
   </div>
 </section>
 

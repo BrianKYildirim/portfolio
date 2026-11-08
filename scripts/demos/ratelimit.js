@@ -4,7 +4,7 @@ import { TokenBucketLimiter } from './ratelimit-core.js';
 
 const CAP = 10_000; // ring-buffer size for drawn events
 const DEFAULT_RATES = [8, 3, 12, 1];
-const RUNS = [[10, '10 s'], [30, '30 s'], [60, '60 s'], [0, 'Unlimited']];
+const RUNS = [[10, '10 s'], [30, '30 s'], [60, '60 s'], [0, 'Unlimited']]; // claim-waiver: run-length option labels in the playground, not measurements
 const SPEEDS = [0.5, 1, 2];
 
 export function mulberry32(a) {
@@ -90,15 +90,15 @@ const TEMPLATE = (cfg) => `
     <div class="demo-buckets" data-buckets></div>
     <p class="pd-caption">The library refills lazily, only when <code>allow()</code> is called; the level shown between calls is computed for display. Click a bucket to send one request.</p>
     <div class="demo-card">
-      <p class="demo-label" id="rl-tl">Decisions · last 10 s</p>
+      <p class="demo-label" id="rl-tl">Decisions · last 10 s</p><!-- // claim-waiver: window of the playground timeline on its simulated clock, not a measurement -->
       <canvas class="demo-canvas" height="120" data-timeline role="img" aria-labelledby="rl-tl" aria-describedby="rl-table"></canvas>
       <p class="demo-legend-row"><span class="demo-sw demo-sw-ok"></span>accepted (filled, above the line) <span class="demo-sw demo-sw-no"></span>rejected (hollow, below)</p>
     </div>
     <div class="demo-card">
-      <p class="demo-label" id="rl-tp">Throughput · per second, last 30 s</p>
+      <p class="demo-label" id="rl-tp">Throughput · per second, last 30 s</p><!-- // claim-waiver: window of the playground throughput chart on its simulated clock, not a measurement -->
       <canvas class="demo-canvas" height="110" data-throughput role="img" aria-labelledby="rl-tp" aria-describedby="rl-table"></canvas>
       <p class="demo-legend-row"><span class="demo-sw demo-sw-ok"></span>accepted <span class="demo-sw demo-sw-hatch"></span>rejected <span class="demo-sw demo-sw-line"></span><span data-limit-label></span></p>
-      <div class="vh"><table id="rl-table"><caption>Requests per second, last 10 seconds</caption><thead><tr><th>Second</th><th>Accepted</th><th>Rejected</th></tr></thead><tbody data-table></tbody></table></div>
+      <div class="vh"><table id="rl-table"><caption>Requests per second, last 10 seconds</caption><thead><tr><th>Second</th><th>Accepted</th><th>Rejected</th></tr></thead><tbody data-table></tbody></table></div><!-- // claim-waiver: window of the playground table on its simulated clock, not a measurement -->
     </div>
     <dl class="demo-counters" data-counters></dl>
     <div>
@@ -204,7 +204,7 @@ export function mount(root, { status }) {
       else { g.strokeStyle = C['signal-bad']; g.strokeRect(x + 0.5, y + 2.5, 2, 6); }
     }
     g.fillStyle = C.muted;
-    [[0, '-10s', 'left'], [0.5, '-5s', 'center'], [1, 'now', 'right']].forEach(([p, s, a]) => { g.textAlign = a; g.fillText(s, p * w, h - 3); });
+    [[0, '-10s', 'left'], [0.5, '-5s', 'center'], [1, 'now', 'right']].forEach(([p, s, a]) => { g.textAlign = a; g.fillText(s, p * w, h - 3); }); // claim-waiver: axis labels on the playground simulated clock, not measurements
     g.textAlign = 'left';
   }
   let hatch = null;
@@ -234,7 +234,7 @@ export function mount(root, { status }) {
     g.strokeStyle = C.text; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(0, Math.round(y(limit)) + 0.5); g.lineTo(w, Math.round(y(limit)) + 0.5); g.stroke(); g.setLineDash([]);
     g.fillStyle = C.muted;
     g.fillText(`${Math.round(max)}/s`, 2, 10);
-    g.textAlign = 'left'; g.fillText('-30s', 0, h - 3); g.textAlign = 'right'; g.fillText('now', w, h - 3); g.textAlign = 'left';
+    g.textAlign = 'left'; g.fillText('-30s', 0, h - 3); g.textAlign = 'right'; g.fillText('now', w, h - 3); g.textAlign = 'left'; // claim-waiver: axis labels on the playground simulated clock, not measurements
     el.limitLabel.textContent = cfg.shared ? `limit ${limit}/s (one shared key)` : `limit ${limit}/s (${cfg.refill}/s × ${cfg.clientCount} key${cfg.clientCount > 1 ? 's' : ''})`;
   }
   let tableSec = null, countersHtml = '';

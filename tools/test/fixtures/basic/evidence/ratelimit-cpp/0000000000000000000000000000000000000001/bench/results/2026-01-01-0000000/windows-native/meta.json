@@ -1,0 +1,8 @@
+{
+  "schema": "bench-meta/1",
+  "source": {
+    "repo": "BrianKYildirim/ratelimit-cpp",
+    "sha": "0000000000000000000000000000000000000002"
+  },
+  "notes": ["fixture: only source.sha is read (checkEvidence); not a complete bench-meta/1 document"]
+}

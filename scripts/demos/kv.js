@@ -298,7 +298,7 @@ export function mount(root, { status }) {
       const len = enc.encode(c.input.value).length;
       send.disabled = c.state !== 'connected' || !c.input.value || len > 1024;
       hint.hidden = len <= 1024;
-      hint.textContent = `${len} bytes: server.py reads at most 1024 per recv(), so send 1024 bytes or fewer.`;
+      hint.textContent = `${len} bytes: server.py reads at most 1024 per recv(), so send 1024 bytes or fewer.`; // claim-waiver: states server.py's recv(1024) framing (design fact kv.design.recv_bytes); Phase 5 replaces this demo
       c.f.querySelector('[data-out]').textContent = c.out;
     }
     el.add.hidden = clients.length >= 4;

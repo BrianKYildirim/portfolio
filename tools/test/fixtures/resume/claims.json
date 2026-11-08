@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "repos": {
+    "ratelimit-cpp": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../ratelimit-cpp"
+    },
+    "image-quality-gate": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../image-quality-gate"
+    },
+    "key-value-storage": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../key-value-storage"
+    },
+    "minecraft-enchantment-order": {
+      "owner": "BrianKYildirim",
+      "default_branch": "main",
+      "local": "../minecraft-enchantment-order"
+    }
+  },
+  "page_repos": {
+    "rate-limiter": "ratelimit-cpp",
+    "image-quality-gate": "image-quality-gate",
+    "kv-server": "key-value-storage",
+    "enchantment-calculator": "minecraft-enchantment-order"
+  },
+  "environments": {
+    "windows-native": {
+      "label": "Windows 11, native"
+    },
+    "ubuntu-wsl2": {
+      "label": "Ubuntu on WSL2"
+    }
+  },
+  "tables": [],
+  "claims": [
+    {
+      "id": "rl.fixture.memory.k1000000",
+      "project": "ratelimit-cpp",
+      "kind": "memory",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: heap bytes per key with 1000000 short keys",
+      "measure": "heap_bytes",
+      "build": "instrumented:glibc-heap-accounting",
+      "label_required": "heap-accounting allocator",
+      "environment": "ubuntu-wsl2",
+      "unit": "bytes",
+      "stat": "median",
+      "value": 134.218808,
+      "n": 10,
+      "spread": {
+        "kind": "min-max",
+        "low": 134.218808,
+        "high": 134.218808
+      },
+      "display": {
+        "value": [
+          "134.2"
+        ],
+        "spread": [
+          "134.2–134.2"
+        ],
+        "n": [
+          "10 runs"
+        ]
+      },
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/ubuntu-wsl2/summary.json",
+        "pointer": "/rl_bench/BM_MemoryPerKey/bytes_per_key"
+      },
+      "source_sha": "0000000000000000000000000000000000000002"
+    },
+    {
+      "id": "rl.fixture.tests",
+      "project": "ratelimit-cpp",
+      "kind": "test_count",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: tests in the suite",
+      "unit": "tests",
+      "value": 54,
+      "display": {
+        "value": [
+          "54 tests"
+        ]
+      },
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/ubuntu-wsl2/raw/tests.txt",
+        "pattern": "out of (d+)"
+      },
+      "source_sha": "0000000000000000000000000000000000000002"
+    },
+    {
+      "id": "rl.fixture.proposed",
+      "project": "ratelimit-cpp",
+      "kind": "test_count",
+      "status": "proposed",
+      "approved_by": null,
+      "approved_on": null,
+      "statement": "Fixture: a proposed count",
+      "unit": "tests",
+      "value": 60,
+      "display": {
+        "value": [
+          "60 tests"
+        ]
+      },
+      "evidence": {
+        "repo": "ratelimit-cpp",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/ubuntu-wsl2/raw/tests.txt",
+        "pattern": "out of (d+)"
+      },
+      "source_sha": "0000000000000000000000000000000000000002"
+    },
+    {
+      "id": "iqg.fixture.tests",
+      "project": "image-quality-gate",
+      "kind": "test_count",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: tests in the suite",
+      "unit": "tests",
+      "value": 130,
+      "display": {
+        "value": [
+          "130 tests"
+        ]
+      },
+      "evidence": {
+        "repo": "image-quality-gate",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/ubuntu-wsl2/raw/tests.txt",
+        "pattern": "(d+) passed"
+      },
+      "source_sha": "0000000000000000000000000000000000000002"
+    },
+    {
+      "id": "kv.fixture.max_connections",
+      "project": "key-value-storage",
+      "kind": "design_fact",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: default --max-connections",
+      "unit": "connections",
+      "value": 100,
+      "display": {
+        "value": [
+          "100"
+        ]
+      },
+      "evidence": {
+        "repo": "key-value-storage",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "server.py",
+        "pattern": "default=(d+)"
+      },
+      "source_sha": "0000000000000000000000000000000000000002"
+    },
+    {
+      "id": "kv.fixture.tests",
+      "project": "key-value-storage",
+      "kind": "test_count",
+      "status": "approved",
+      "approved_by": "fixture-owner",
+      "approved_on": "2026-01-02",
+      "statement": "Fixture: tests run",
+      "unit": "tests",
+      "value": 50,
+      "display": {
+        "value": [
+          "50 tests"
+        ]
+      },
+      "evidence": {
+        "repo": "key-value-storage",
+        "sha": "0000000000000000000000000000000000000001",
+        "path": "bench/results/2026-01-01-0000000/ubuntu-wsl2/raw/tests.txt",
+        "pattern": "Ran (d+) tests"
+      },
+      "source_sha": "0000000000000000000000000000000000000002"
+    }
+  ]
+}

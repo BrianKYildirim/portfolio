@@ -1,3 +1,5 @@
 # Results fixtures are checked byte for byte (meta.json stores the sha256 of each raw file), so git must
 # never convert their line endings (core.autocrlf would turn LF into CRLF on a Windows checkout).
 tools/test/fixtures/results/** -text
+# The CRLF README fixture must stay CRLF on every checkout (its test compares it with an LF twin).
+tools/test/fixtures/md/README.crlf.md -text

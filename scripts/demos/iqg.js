@@ -151,7 +151,7 @@ const TEMPLATE = `
         <p class="demo-drop-title" data-drop-title>Drop an image here</p>
         <p class="demo-small">or</p>
         <label class="project-link demo-file">Choose file<input type="file" accept="image/*" class="vh" data-file></label>
-        <p class="demo-small">JPEG, PNG, WebP, GIF, AVIF — anything your browser can open · up to 6 MB</p>
+        <p class="demo-small">JPEG, PNG, WebP, GIF, AVIF — anything your browser can open · up to 6 MB</p><!-- // claim-waiver: states the service MAX_UPLOAD_MB default (design fact iqg.config.max_upload_mb); Phase 4 replaces this demo -->
       </div>
       <img class="demo-preview" data-preview alt="" decoding="async" hidden>
     </div>
@@ -269,7 +269,7 @@ export function mount(root, { status }) {
     if (!file) return;
     hideError(); pressSample(null);
     if (!file.type.startsWith('image/')) return showError([`That file isn't an image (${file.type || 'unknown type'}).`, 'The service would answer 415 Unsupported media type.']);
-    if (file.size > MAX_UPLOAD_BYTES) return showError([`That file is ${fmtMB(file.size)}. The service accepts up to 6 MB.`, 'The service would answer 413 File too large.']);
+    if (file.size > MAX_UPLOAD_BYTES) return showError([`That file is ${fmtMB(file.size)}. The service accepts up to 6 MB.`, 'The service would answer 413 File too large.']); // claim-waiver: states the service's MAX_UPLOAD_MB default (design fact iqg.config.max_upload_mb); Phase 4 replaces this demo
     const item = { blob: file, name: file.name || 'pasted image', type: file.type, size: file.size, url: URL.createObjectURL(file) };
     const probe = Object.assign(new Image(), { decoding: 'async' });
     probe.onload = () => {

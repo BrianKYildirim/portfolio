@@ -1,0 +1,44 @@
+{
+  "schema": "bench-summary/1",
+  "rl_bench": {
+    "BM_Clock_Fast": {
+      "real_time_ns": {
+        "n": 10,
+        "median": 10.21,
+        "min": 10.05,
+        "max": 10.48,
+        "p25": 10.15,
+        "p75": 10.3,
+        "unit": "ns",
+        "measure": "amortized_per_op",
+        "build": "uninstrumented"
+      }
+    },
+    "BM_Hot_Allowed.t1": {
+      "wall_ops_s": {
+        "n": 10,
+        "median": 36312345.6,
+        "min": 31012345,
+        "max": 37287654,
+        "p25": 35500000,
+        "p75": 36900000,
+        "unit": "calls/s",
+        "measure": "throughput",
+        "build": "uninstrumented"
+      }
+    },
+    "BM_Hot_Denied.t1": {
+      "wall_ops_s": {
+        "n": 10,
+        "median": 44512345.6,
+        "min": 41512345,
+        "max": 45187654,
+        "p25": 44000000,
+        "p75": 44900000,
+        "unit": "calls/s",
+        "measure": "throughput",
+        "build": "uninstrumented"
+      }
+    }
+  }
+}

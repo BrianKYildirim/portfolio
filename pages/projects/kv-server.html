@@ -57,8 +57,9 @@
             <code>client.py</code>: one send, one <code>recv(1024)</code>, and its output lines. Verified against the
             Python classes with 22 command vectors.</li>
           <li>Simulated, not real: TCP, <code>accept()</code>, the threads, <code>threading.RLock</code> and the file on
-            disk. The socket byte streams are modelled, so a response longer than 1024 bytes is split across reads the
-            way <code>client.py</code> would see it.</li>
+            disk. The socket byte streams are modelled, so a response longer than <span
+              data-claim="kv.design.client_recv_bytes">1024 bytes</span> is split across reads the way
+            <code>client.py</code> would see it.</li>
           <li>CPython's lock is not FIFO-fair; the queue is shown in arrival order for clarity. The RLock's count never
             exceeds 1, because <code>save()</code> doesn't acquire the lock.</li>
           <li>Python's <code>split()</code>, <code>strip()</code> and <code>upper()</code> match JavaScript for printable
@@ -99,7 +100,7 @@
       <span class="pd-src">as of <code>9d05eaf</code></span><a
         href="https://github.com/BrianKYildirim/key-value-storage/blob/9d05eafd13db75b384f60c7b0bc13e736285406e/server.py#L297-L331"
         target="_blank" rel="noopener noreferrer">view on GitHub</a></figcaption>
-    <pre tabindex="0"><code>while True:
+    <pre tabindex="0"><code data-claim-waiver="verbatim source excerpt pinned to a commit">while True:
     receiving = True  # While waiting for data, an error during shutdown is not the client's fault.
     try:
         data = client_socket.recv(1024)  # Reads up to 1024 bytes from the client.
@@ -158,8 +159,9 @@
     <div class="pd-prose">
       <p>A command is whatever one <code>recv(1024)</code> returns. TCP is a byte stream, so two quick sends can arrive
         in one read and a long one can be split. <code>client.py</code> also reads exactly one <code>recv(1024)</code>
-        per response, so a <code>PRINT</code> longer than 1024 bytes leaves the rest in the socket, and the next command
-        shows the leftover instead of its own answer. The playground reproduces this.</p>
+        per response, so a <code>PRINT</code> longer than <span data-claim="kv.design.client_recv_bytes">1024
+          bytes</span> leaves the rest in the socket, and the next command shows the leftover instead of its own
+        answer. The playground reproduces this.</p>
     </div>
   </div>
 </section>
@@ -224,13 +226,41 @@
         copy</span></li>
     <li><span class="v">Live</span><span class="l">responses and store.txt from the parser ported from
         <code>7ccdff6</code>, in the demo above</span><span class="pd-src">Live in demo</span></li>
+    <li><span class="v" data-claim="kv.off.c1.cmd_per_s.ubuntu-wsl2">10,711</span><span class="l">commands per
+        second with 1 client and observability off, on <span data-claim="kv.off.c1.cmd_per_s.ubuntu-wsl2"
+          data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="kv.off.c1.cmd_per_s.ubuntu-wsl2" data-claim-field="spread">10,489–12,074</span></span><span
+        class="pd-src">median of <span data-claim="kv.off.c1.cmd_per_s.ubuntu-wsl2" data-claim-field="n">5
+          runs</span></span></li>
+    <li><span class="v" data-claim="kv.off.c16.cmd_per_s.ubuntu-wsl2">7,738</span><span class="l">commands per
+        second with 16 clients and observability off, on <span data-claim="kv.off.c16.cmd_per_s.ubuntu-wsl2"
+          data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="kv.off.c16.cmd_per_s.ubuntu-wsl2" data-claim-field="spread">7,590–9,018</span></span><span
+        class="pd-src">median of <span data-claim="kv.off.c16.cmd_per_s.ubuntu-wsl2" data-claim-field="n">5
+          runs</span></span></li>
+    <li><span class="v" data-claim="kv.ring_vs_off.c16.ubuntu-wsl2">0.61×</span><span class="l">of the throughput
+        with observability off, at 16 clients, when the in-memory event buffer and the inspection endpoint are on (an
+        instrumented build), on <span data-claim="kv.ring_vs_off.c16.ubuntu-wsl2"
+          data-claim-field="environment">Ubuntu on WSL2</span>; range <span
+          data-claim="kv.ring_vs_off.c16.ubuntu-wsl2" data-claim-field="spread">0.60–0.63×</span></span><span
+        class="pd-src">median ratio of <span data-claim="kv.ring_vs_off.c16.ubuntu-wsl2" data-claim-field="n">5
+          runs</span></span></li>
+    <li><span class="v" data-claim="kv.jsonl_vs_off.c16.ubuntu-wsl2">0.26×</span><span class="l">of the throughput
+        with observability off, at 16 clients, when every event is also written to a JSONL file (an instrumented
+        build), on <span data-claim="kv.jsonl_vs_off.c16.ubuntu-wsl2" data-claim-field="environment">Ubuntu on
+          WSL2</span>; range <span data-claim="kv.jsonl_vs_off.c16.ubuntu-wsl2"
+          data-claim-field="spread">0.22–0.27×</span></span><span class="pd-src">median ratio of <span
+          data-claim="kv.jsonl_vs_off.c16.ubuntu-wsl2" data-claim-field="n">5 runs</span></span></li>
   </ul>
   <div class="pd-prose">
-    <p>Load-test results for the current version, with the machine and conditions they were measured under, are in the
-      README: <a
-        href="https://github.com/BrianKYildirim/key-value-storage/blob/9d05eafd13db75b384f60c7b0bc13e736285406e/README.md#what-observability-costs"
-        target="_blank" rel="noopener noreferrer">What observability costs</a> (as of <code>9d05eaf</code>). The
-      playground above is the best way to see what the protocol does.</p>
+    <p>The load-test figures are for <code>server.py</code> at <code>448c88e</code>, measured with
+      <code>bench/loadtest.py</code> on one laptop: each client, in its own process, sends alternating
+      <code>SET</code> and <code>GET</code> commands to a fresh server on 127.0.0.1, and every combination of server and
+      client count ran 5 times, interleaved. A ratio compares runs from the same repeat. The README section <a
+        href="https://github.com/BrianKYildirim/key-value-storage/blob/92ed7329b37d8cf527a1b14fc8740da98afa3263/README.md#what-observability-costs"
+        target="_blank" rel="noopener noreferrer">What observability costs</a> (as of <code>92ed732</code>) has the
+      method, the machine, and full tables for Ubuntu on WSL2 and native Windows 11. The playground above is the best
+      way to see what the protocol does.</p>
   </div>
 </section>
 
