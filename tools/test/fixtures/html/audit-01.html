@@ -1,0 +1,17 @@
+<!-- AUDIT-01 regression fixture (markup from 0fe0a16, cdf2aeb, 25549a8, e98d71b): every figure here must fail UNTAGGED_NUMBER. -->
+<article class="projects-page-card" data-category="systems" data-project="rate-limiter">
+<div class="project-meta"><span class="project-stat">100+ req/s</span></div>
+<div class="project-meta"><span class="project-stat">75.7M ops/s</span></div>
+<p>A sharded token-bucket limiter, achieving 40ns processing latency (up to 375× faster than Redis).</p>
+</article>
+<div class="number-value">~40<span class="accent">ns</span></div>
+<p class="number-description">per rate-limiter check (<span class="boldened">25–300</span> ns)</p>
+<p>Built a REST microservice for blur and brightness validation sustaining 100+ requests/sec at 30-60 ms median latency.</p>
+<p>Up to 375 times faster than Redis.</p>
+<p>It served 1,200 requests/sec.</p>
+<p>It handled 5,000 ops/sec.</p>
+<p>The server processed 12,000 commands per second.</p>
+<p>The engine ran 2.1 million operations per second.</p>
+<p>A lookup took 3 milliseconds.</p>
+<p>Waived: <span data-claim-waiver="synthetic traffic rate label, not a measurement">100+ req/s</span></p>
+<p>Not units: CMake 3.16+, bits 32+ pick a shard, over 30+ images, 2.8M+ impressions, retried 3 times, dated 10 s/2026.</p>

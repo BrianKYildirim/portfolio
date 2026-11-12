@@ -57,6 +57,9 @@ export class Traffic {
   }
 }
 
+const TIMELINE_LABEL = 'Decisions · last 10 s'; // claim-waiver: window of the playground timeline on its simulated clock, not a measurement
+const THROUGHPUT_LABEL = 'Throughput · per second, last 30 s'; // claim-waiver: window of the playground throughput chart on its simulated clock, not a measurement
+const TABLE_CAPTION = 'Requests per second, last 10 seconds'; // claim-waiver: window of the playground table on its simulated clock, not a measurement
 const TEMPLATE = (cfg) => `
 <div class="demo-rl">
   <div class="demo-card demo-rl-controls">
@@ -90,15 +93,15 @@ const TEMPLATE = (cfg) => `
     <div class="demo-buckets" data-buckets></div>
     <p class="pd-caption">The library refills lazily, only when <code>allow()</code> is called; the level shown between calls is computed for display. Click a bucket to send one request.</p>
     <div class="demo-card">
-      <p class="demo-label" id="rl-tl">Decisions · last 10 s</p><!-- // claim-waiver: window of the playground timeline on its simulated clock, not a measurement -->
+      <p class="demo-label" id="rl-tl">${TIMELINE_LABEL}</p>
       <canvas class="demo-canvas" height="120" data-timeline role="img" aria-labelledby="rl-tl" aria-describedby="rl-table"></canvas>
       <p class="demo-legend-row"><span class="demo-sw demo-sw-ok"></span>accepted (filled, above the line) <span class="demo-sw demo-sw-no"></span>rejected (hollow, below)</p>
     </div>
     <div class="demo-card">
-      <p class="demo-label" id="rl-tp">Throughput · per second, last 30 s</p><!-- // claim-waiver: window of the playground throughput chart on its simulated clock, not a measurement -->
+      <p class="demo-label" id="rl-tp">${THROUGHPUT_LABEL}</p>
       <canvas class="demo-canvas" height="110" data-throughput role="img" aria-labelledby="rl-tp" aria-describedby="rl-table"></canvas>
       <p class="demo-legend-row"><span class="demo-sw demo-sw-ok"></span>accepted <span class="demo-sw demo-sw-hatch"></span>rejected <span class="demo-sw demo-sw-line"></span><span data-limit-label></span></p>
-      <div class="vh"><table id="rl-table"><caption>Requests per second, last 10 seconds</caption><thead><tr><th>Second</th><th>Accepted</th><th>Rejected</th></tr></thead><tbody data-table></tbody></table></div><!-- // claim-waiver: window of the playground table on its simulated clock, not a measurement -->
+      <div class="vh"><table id="rl-table"><caption>${TABLE_CAPTION}</caption><thead><tr><th>Second</th><th>Accepted</th><th>Rejected</th></tr></thead><tbody data-table></tbody></table></div>
     </div>
     <dl class="demo-counters" data-counters></dl>
     <div>

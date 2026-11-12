@@ -14,7 +14,22 @@ const SI = Object.freeze({ k: 1e3, M: 1e6, G: 1e9 });
 // spread.kind names the pair of stats keys that gives low and high.
 const SPREAD_KEYS = Object.freeze({ 'min-max': ['min', 'max'], 'p25-p75': ['p25', 'p75'], 'pooled-p25-p75': ['pooled_p25', 'pooled_p75'] });
 const ENTITIES = Object.freeze({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', thinsp: '\u2009',
-  times: '\u00d7', micro: '\u00b5', ndash: '\u2013', mdash: '\u2014', minus: '\u2212', asymp: '\u2248' });
+  times: '\u00d7', micro: '\u00b5', ndash: '\u2013', mdash: '\u2014', minus: '\u2212', asymp: '\u2248',
+  // &mu; is the Greek letter (fold maps it to the micro sign); the spacing entities each read as a space.
+  mu: '\u03bc', ensp: '\u2002', emsp: '\u2003', hairsp: '\u200a', numsp: '\u2007', puncsp: '\u2008', MediumSpace: '\u205f',
+  ThinSpace: '\u2009', NonBreakingSpace: '\u00a0', percnt: '%', sol: '/', period: '.', comma: ',',
+  // Invisible joiners and the soft hyphen decode to nothing, so "3&ZeroWidthSpace;ms" reads "3ms".
+  shy: '', NoBreak: '', ZeroWidthSpace: '',
+  // Common typography after a number in ordinary prose; decoded so it never reads as residue ("3.11 &middot; FastAPI").
+  middot: '·', bull: '•', hellip: '…', rarr: '→', larr: '←', copy: '©', deg: '°', plusmn: '±' });
+// An entity name: the longest HTML5 name, CounterClockwiseContourIntegral, has 31 letters; names such as frac12 and
+// emsp13 hold digits after the first letter.
+const ENTITY_NAME = String.raw`[a-zA-Z][a-zA-Z0-9]{1,31}`;
+const ENTITY_REF = new RegExp(String.raw`&(#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|` + ENTITY_NAME + ');', 'g');
+// The soft hyphen and the invisible joiners (U+00AD, U+200B-U+200D, U+2060, U+FEFF) split a figure from its unit
+// without showing anything, so every text path removes them before matching. Built from char codes for the same
+// reason as JS_EOL: no invisible character is typed into this file.
+const FORMAT_CHARS = new RegExp(`[${String.fromCharCode(0xad, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff)}]`, 'g');
 
 const byteLength = (text) => new TextEncoder().encode(text).length;
 const finding = (file, line, code, message) => ({ file, line, code, message });
@@ -28,8 +43,9 @@ function lineIndex(text) {
     return lo + 1;
   };
 }
-// NFC, one micro sign (U+03BC Greek mu folds to U+00B5), collapsed whitespace. Case is kept: M and m differ.
-const fold = (s) => String(s).normalize('NFC').replace(/\u03bc/g, '\u00b5').replace(/\s+/g, ' ').trim();
+// NFC, invisible joiners removed, one micro sign (U+03BC Greek mu folds to U+00B5), collapsed whitespace. Case is
+// kept: M and m differ.
+const fold = (s) => String(s).normalize('NFC').replace(FORMAT_CHARS, '').replace(/\u03bc/g, '\u00b5').replace(/\s+/g, ' ').trim();
 const lookup = (byId, id) => (byId instanceof Map ? byId.get(id) : (byId && Object.hasOwn(byId, id) ? byId[id] : undefined));
 
 // ---------- Input ----------
@@ -100,8 +116,9 @@ export function matchesRange(low, high, str) {
 }
 
 // ---------- HTML leaves ----------
+// Unknown names are returned unchanged (the residue check reports one directly after a number).
 function decodeEntities(s) {
-  return s.replace(/&(#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|[a-zA-Z]{2,8});/g, (m, e) => {
+  return s.replace(ENTITY_REF, (m, e) => {
     if (e[0] !== '#') return Object.hasOwn(ENTITIES, e) ? ENTITIES[e] : m;
     const cp = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
     return cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
@@ -233,16 +250,82 @@ async function tagged(claimsById, leaves, readEvidence) {
 // CLAIM-02 / D-05: every visible number with a performance unit carries a data-claim marker or a reasoned waiver.
 // Patterns are raw strings (RESEARCH Pitfall 11) with no nested quantifiers (T-02-01). A number may not be glued to
 // a preceding letter, digit, '.' or ',' ("WSL2", "v1.2" and the tail of "1,2,3" never start one, which also keeps
-// the scan linear). An en-dash or hyphen range is one token. × and x count only when no digit follows, so
-// "12000 × 12000" is a dimension; an ASCII x before a template `${` is a hex prefix (`0x${hex}`), not a
-// multiplier. px and MP are not units here (RESEARCH Open Question 3).
-export const NUM = String.raw`(?<![\w.,])[+−-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s?[–-]\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)?\s?(?:[kKMG](?![A-Za-z]))?`;
-export const UNIT = String.raw`(?:Mops\/s|ops\/s|cmd\/s|calls\/s|req\/s|seconds?|secs?|ns|µs|μs|us|ms|s|×(?!\s?\d)|x(?!\s?\d|\$\{)|KiB|MiB|GiB|KB|MB|GB|bytes?|%|tests?)`;
-export const UNIT_NUMBER = new RegExp(NUM + String.raw`[\s-]?` + UNIT + String.raw`(?![\w/])`, 'g');
+// the scan linear). An en-dash or hyphen range is one token. ×, x and X count only when no digit follows, so
+// "12000 × 12000" and "1920 X 1080" are dimensions; an ASCII x or X before a template `${` is a hex prefix
+// (`0x${hex}`), and one before a letter starts a word ("0XFF", "3 Xbox"), not a multiplier. px and MP are not
+// units here (RESEARCH Open Question 3).
+// Entities are decoded through the one ENTITIES table in every scanner (spacing entities such as &ensp; read as a
+// space, &mu; as μ); the invisible joiners and the soft hyphen (FORMAT_CHARS) are removed before matching.
+// Whatever is still undecoded directly after a number (an unknown entity, another invisible format character) is
+// UNKNOWN_ENTITY or FORMAT_CHARACTER (RESIDUE, residueFindings), in every scanner.
+// Coverage anchor (CLAIM-05): tools/test/unit-coverage.test.mjs reads every unit bench/claims.json uses and holds a
+// fixed list of usual spellings per scanned unit, each of which must be one whole token here; a new claim unit fails
+// that test until it is classified. A glued '+' is part of the number ("100+ req/s", "2.8M+"). UNIT alternatives:
+// (A) a count rate, optional scale word, noun, then '/' or 'per'/'a' and a time ("75.7M op/s", "12,000 cmds/sec",
+//     "2.1 million operations per second", "4 commands a second", "10,000 reads per second", "5 req/min");
+// (B) a comparative speedup ("375 times faster", "375-fold faster") or a hyphenated "375-fold";
+// (C) a spelled-out or abbreviated time unit ("3 milliseconds", "100 microsec", "40 nsec", "3 msecs");
+// (D) a spelled-out percent ("95 percent", "95 per cent");
+// (G) an acronym rate ("1,000 RPS", "5,000 IOPS", "30 fps", "10 Gbps");
+// (E) the symbol units ("40 ns", "1.7 µs", "3.5×", "101 MiB", "64 kB", "1 TB", "28 bytes", "95%", "54 tests");
+// (F) a bare rate glued to the number ("75.7M/s", "5 per second");
+// (H) last, so every specific unit wins first: a generic count rate ("1,000 rows/sec", "60 frames per second").
+//     Being last keeps "10<sup>9</sup> ns per second" reporting only "9 ns".
+// Deliberate non-forms: "N times" alone ("retried 3 times") is a count; a spaced '+' ("100 + 5 ms") is arithmetic;
+// a bare 'B' collides with single-letter names (the blue channel weight "0.114 B" in image-quality-gate README:45);
+// rate denominators stop at the millisecond, because a README marker must keep binding the bare number of a
+// ticks/ns display ("2.995 ticks/ns" binds "2.995"); minutes and hours are denominators only, never a time unit
+// on their own ("a 5 minute run" stays quiet).
+// A unit glued to '/' and a 1-10 letter word is one token ("500 MB/s", "10 ns/op"). Any other '/' after a unit
+// fails closed to the bare unit ("3 ms/2 ops" reports "3 ms", "2x/3x" reports both); only '/' plus a 4-digit
+// year ("10 s/2026") stays unmatched.
+// One \s between words is enough: every scanner collapses whitespace runs before matching.
+export const NUM = String.raw`(?<![\w.,])[+−-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s?[–-]\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)?\s?(?:[kKMG](?![A-Za-z]))?(?:(?<!\s)\+)?`;
+const SCALE_WORD = String.raw`(?:(?:thousand|million|billion|trillion)\s)?`;
+const RATE_NOUN = String.raw`(?:Mops|ops?|operations?|requests?|reqs?|commands?|cmds?|calls?|quer(?:y|ies)|images?|reads?|writes?|decisions?|tokens?|transactions?)`;
+// Rate denominators; no ns, µs or us (see the non-forms above).
+const SLASH_TIME = String.raw`(?:seconds?|secs?|s|milliseconds?|msecs?|ms|minutes?|mins?|hours?|hrs?|h)`;
+const PER_TIME = String.raw`(?:seconds?|secs?|milliseconds?|msecs?|ms|minutes?|mins?|hours?|hrs?)`;
+const COMPARATIVE = String.raw`(?:faster|slower|more|less|fewer|higher|lower|better|worse|quicker|larger|smaller)`;
+export const UNIT = '(?:'
+  + SCALE_WORD + RATE_NOUN + String.raw`(?:\/` + SLASH_TIME + String.raw`|\s(?:per|a)\s` + PER_TIME + ')'   // (A)
+  + String.raw`|(?:times|fold)\s` + COMPARATIVE + String.raw`|(?<=-)fold`                                   // (B)
+  + String.raw`|(?:milli|micro|nano)(?:seconds?|secs?)|[nuµμm]secs?`                                        // (C)
+  + String.raw`|percent|per\scent`                                                                           // (D)
+  + String.raw`|IOPS|iops|[RQT]PS|[rqt]ps|fps|FPS|[kKMGT]bps`                                                // (G)
+  + String.raw`|seconds?|secs?|ns|µs|μs|us|ms|s|×(?!\s?\d)|[xX](?!\s?\d|\$\{|[A-Za-z])|KiB|MiB|GiB|TiB|kB|KB|MB|GB|TB|bytes?|%|tests?` // (E)
+  + String.raw`|\/` + SLASH_TIME + String.raw`|per\s` + PER_TIME                                            // (F)
+  + '|' + SCALE_WORD + String.raw`[A-Za-z]{1,20}(?:\/` + SLASH_TIME + String.raw`|\sper\s` + PER_TIME + ')' // (H)
+  + ')';
+// Shared by UNIT_NUMBER and MD_BIND, so a README marker binds exactly the token the scan would report. A '/' and a
+// 1-10 letter word stay part of the token ("500 MB/s"); otherwise the bare unit is the token (fail closed: "3 ms/2 ops"
+// reports "3 ms"), unless '/' and exactly four digits follow, a year ("10 s/2026").
+const UNIT_TAIL = String.raw`(?:\/[A-Za-z]{1,10}(?![\w/])|(?!\w)(?!\/\d{4}(?!\d)))`;
+export const UNIT_NUMBER = new RegExp(NUM + String.raw`[\s-]?` + UNIT + UNIT_TAIL, 'g');
+// Residue: anything left after decoding right after a number (an entity-shaped token the ENTITIES table does not
+// decode, or an invisible format character FORMAT_CHARS does not remove) could hide the unit after it, so it is
+// reported, not left as text (fail closed). A residue before a number hides nothing and is not reported. The u flag
+// is needed only for \p{Cf}; UNIT_NUMBER keeps no u flag (02-03 decision).
+const RESIDUE = new RegExp(NUM + String.raw`\s?(&#?[A-Za-z0-9]{1,32};|\p{Cf})`, 'gu');
+// Pushes into the caller's `out` (spreading a large result into push overflows the call stack) and drives RESIDUE
+// with exec (matchAll clones the pattern on every call; this runs once per line and per visible attribute).
+function residueFindings(text, file, lineAt, out) {
+  RESIDUE.lastIndex = 0;
+  for (let m = RESIDUE.exec(text); m; m = RESIDUE.exec(text)) {
+    const what = m[1], figure = m[0].slice(0, m[0].length - what.length).trim(), line = lineAt(m.index);
+    if (what[0] === '&') {
+      out.push(finding(file, line, 'UNKNOWN_ENTITY', `"${what}" after "${figure}" is an entity the checker does not decode, so the figure cannot be read; write the character itself`));
+    } else {
+      const code = `U+${what.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+      out.push(finding(file, line, 'FORMAT_CHARACTER', `${code} after "${figure}" is an invisible format character that hides the figure; remove it`));
+    }
+  }
+}
 
 const OPEN_TAG = /<([a-zA-Z][a-zA-Z0-9-]*)(\s[^<>]*)?>/g;
 // One token of visible text: a tag, an entity, a whitespace run, a text run, or a lone '<' / '&'.
-const VISIBLE_TOKEN = /<[A-Za-z/!?][^<>]*>|&(?:#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|[a-zA-Z]{2,8});|\s+|[^<&\s]+|[<&]/g;
+const VISIBLE_TOKEN = new RegExp(String.raw`<[A-Za-z/!?][^<>]*>|&(?:#[xX][0-9a-fA-F]{1,6}|#\d{1,7}|` + ENTITY_NAME
+  + String.raw`);|\s+|[^<&\s]+|[<&]`, 'g');
 const hasClass = (attrs, name) => (attr(attrs, 'class') ?? '').split(/\s+/).includes(name);
 const blank = (s) => s.replace(/[^\n]/g, ' ');
 // Same-length blanking of [start, end) ranges in one pass, so offsets and line numbers stay true.
@@ -317,8 +400,45 @@ function metricFindings(src, file, lineOf) {
   }
   return { findings: out, ranges };
 }
-// Visible text: every tag becomes one space (so 10<sup>9</sup> never reads as 109; attribute values such as
-// data-placeholder vanish with their tags), entities are decoded, whitespace runs collapse to one space.
+// REVIEW WR-03: attribute text a visitor sees or hears (a tooltip, a screen-reader label, an image description, a
+// search-result snippet) is scanned like visible text. content counts only on a meta whose name or property is a
+// description or a social title (META_TEXT); viewport, http-equiv and every data-* attribute stay internal.
+// Attributes are tokenized in order (name, then an optional double-quoted, single-quoted or unquoted value), so a
+// name inside another attribute's value never matches and a stray quote cannot swallow the next attribute.
+const VOID_ELEMENTS = Object.freeze(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
+const VISIBLE_ATTR = Object.freeze(['alt', 'title', 'aria-label', 'aria-description', 'placeholder', 'content']);
+const META_TEXT = /^(?:description|og:[\w:]+|twitter:title|twitter:description)$/i;
+const ATTRIBUTE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+// A private copy driven by exec: matchAll clones UNIT_NUMBER on every call, which doubled the cost of a page where
+// every tag holds a figure.
+const ATTR_UNIT = new RegExp(UNIT_NUMBER.source, 'g');
+// Each finding carries the line of the attribute itself and names it. A tag whose attribute text has no digit is
+// skipped before any value is parsed (a numeric entity holds digits itself), which keeps 1 MiB of tags linear.
+function attributeFindings(src, file, lineOf) {
+  const out = [];
+  OPEN_TAG.lastIndex = 0;
+  for (let m = OPEN_TAG.exec(src); m; m = OPEN_TAG.exec(src)) {
+    const attrs = m[2] || '';
+    if (!/\d/.test(attrs)) continue;
+    const base = m.index + 1 + m[1].length, list = [];
+    for (const a of attrs.matchAll(ATTRIBUTE)) list.push({ name: a[1].toLowerCase(), value: a[2] ?? a[3] ?? a[4] ?? '', at: base + a.index });
+    const isMetaText = m[1].toLowerCase() === 'meta'
+      && list.some((a) => (a.name === 'name' || a.name === 'property') && META_TEXT.test(a.value.trim()));
+    for (const a of list) {
+      if (!VISIBLE_ATTR.includes(a.name) || (a.name === 'content' && !isMetaText) || !/\d/.test(a.value)) continue;
+      const line = lineOf(a.at), value = fold(decodeEntities(a.value));
+      ATTR_UNIT.lastIndex = 0;
+      for (let t = ATTR_UNIT.exec(value); t; t = ATTR_UNIT.exec(value)) {
+        out.push(finding(file, line, 'UNTAGGED_NUMBER', `"${t[0]}" has a unit but no data-claim marker or data-claim-waiver (in its ${a.name} attribute)`));
+      }
+      residueFindings(value, file, () => line, out);
+    }
+  }
+  return out;
+}
+// Visible text: every tag becomes one space (so 10<sup>9</sup> never reads as 109; attribute values vanish with
+// their tags, and the visitor-visible ones are scanned separately by the attribute pass above), entities are decoded,
+// whitespace runs collapse to one space.
 // Returns the text and lineAt(offset) -> 1-based source line.
 function visibleText(src) {
   // Parts are joined once at the end: appending to one growing string and reading its last character would
@@ -330,9 +450,11 @@ function visibleText(src) {
     starts.push(length); lines.push(line); parts.push(s);
     length += s.length; lastSpace = s.endsWith(' ');
   };
-  for (const [t] of src.matchAll(VISIBLE_TOKEN)) {
+  // Invisible joiners go before tokenizing (U+FEFF would otherwise read as whitespace); line numbers are counted
+  // from newlines, so they stay true. A decoded entity that leaves nothing pushes nothing.
+  for (const [t] of src.replace(FORMAT_CHARS, '').matchAll(VISIBLE_TOKEN)) {
     if (t.length > 1 && t[0] === '<') push(' ');
-    else if (t.length > 1 && t[0] === '&') { const d = decodeEntities(t); push(/^\s+$/.test(d) ? ' ' : d); }
+    else if (t.length > 1 && t[0] === '&') { const d = decodeEntities(t).replace(FORMAT_CHARS, ''); if (d) push(/^\s+$/.test(d) ? ' ' : d); }
     else push(/^\s/.test(t) ? ' ' : t);
     for (let i = t.indexOf('\n'); i !== -1; i = t.indexOf('\n', i + 1)) line += 1;
   }
@@ -350,15 +472,19 @@ const untagged = (file, line, token) => finding(file, line, 'UNTAGGED_NUMBER', `
 const WAIVER_PLACEHOLDERS = Object.freeze(['', 'tbd', 'todo', 'n/a', '-']);
 const noReason = (reason) => WAIVER_PLACEHOLDERS.includes(fold(reason).toLowerCase());
 const WAIVER_ATTR = /(?:^|\s)data-claim-waiver(?=[\s=/]|$)/;
-// data-claim-waiver leaves: the reason is checked (WAIVER_NO_REASON), then the leaf is blanked. A waiver on an
-// element that is not a leaf is LEAF_NOT_LEAF and is not blanked, so its numbers are still scanned.
+// data-claim-waiver leaves: the reason is checked (WAIVER_NO_REASON), then the leaf is blanked. A void element
+// (img, input, meta, ...) has no content, so its waiver covers its own attributes: its opening tag is blanked.
+// A waiver on any other element that is not a leaf is LEAF_NOT_LEAF and is not blanked, so its numbers are still
+// scanned.
 function waiverFindings(src, file, lineOf) {
   const out = [], ranges = [];
   OPEN_TAG.lastIndex = 0;
   for (let m = OPEN_TAG.exec(src); m; m = OPEN_TAG.exec(src)) {
     const attrs = m[2] || '';
     if (!WAIVER_ATTR.test(attrs) || attr(attrs, 'data-claim') !== null) continue;
-    const reason = decodeEntities(attr(attrs, 'data-claim-waiver') ?? ''), line = lineOf(m.index), end = leafEnd(src, m);
+    const isVoid = VOID_ELEMENTS.includes(m[1].toLowerCase());
+    const reason = decodeEntities(attr(attrs, 'data-claim-waiver') ?? ''), line = lineOf(m.index);
+    const end = isVoid ? m.index + m[0].length : leafEnd(src, m);
     if (noReason(reason)) out.push(finding(file, line, 'WAIVER_NO_REASON', `data-claim-waiver needs a reason the owner can review (got "${fold(reason)}")`));
     if (end === -1) out.push(finding(file, line, 'LEAF_NOT_LEAF', 'data-claim-waiver must be on a leaf element with a closing tag'));
     else ranges.push([m.index, end]);
@@ -367,10 +493,11 @@ function waiverFindings(src, file, lineOf) {
 }
 
 // scanHtml(text, file) -> findings (UNTAGGED_NUMBER, METRIC_UNTAGGED, WAIVER_NO_REASON, LEAF_NOT_LEAF,
-// INPUT_TOO_LARGE), in source order. Pipeline (RESEARCH Pattern 6): comments, <script> and <style> out; waived
+// UNKNOWN_ENTITY, FORMAT_CHARACTER, INPUT_TOO_LARGE), in source order. Pipeline (RESEARCH Pattern 6): comments, <script> and <style> out; waived
 // leaves checked and out; data-claim leaves out (checkTagged verifies them); untagged headline values reported;
-// every tag to a space; entities decoded; NFC; then UNIT_NUMBER. Every removal is same-length whitespace with
-// newlines kept, so each finding carries its true source line.
+// visitor-visible attribute values scanned (the attribute pass, WR-03); every tag to a space; entities decoded; NFC;
+// then UNIT_NUMBER. Every removal is same-length whitespace with newlines kept, so each finding carries its true
+// source line.
 export function scanHtml(text, file = '') {
   if (byteLength(text) > MAX_INPUT_BYTES) return [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)];
   let src = String(text).normalize('NFC');
@@ -383,45 +510,147 @@ export function scanHtml(text, file = '') {
   const metrics = metricFindings(src, file, lineOf);
   out.push(...metrics.findings);
   src = blankRanges(src, metrics.ranges);
+  out.push(...attributeFindings(src, file, lineOf));
   const { text: visible, lineAt } = visibleText(src);
   for (const m of visible.matchAll(UNIT_NUMBER)) out.push(untagged(file, lineAt(m.index), m[0]));
+  residueFindings(visible, file, lineAt, out);
   return out.sort((a, b) => a.line - b.line);
 }
 
-// A trailing `// claim-waiver: <reason>` exempts its line. A `//` starts a comment only at the start of the line or
-// after whitespace, so the `//` of a URL inside a string survives.
-const JS_WAIVER = /(?:^|\s)\/\/\s*claim-waiver\b(.*)$/;
-const JS_LINE_COMMENT = /(?:^|\s)\/\//;
+// Waivers are line-scoped: a real trailing `// claim-waiver: <reason>` comment exempts its line. Comments are found
+// by one forward pass that skips strings, template literals (with nested ${} expressions) and regex literals, so a
+// `//` or a waiver-looking text inside a string neither hides the rest of the line nor waives it (REVIEW WR-02).
+// Every JS line terminator ends a line: CRLF, a lone CR, U+2028 and U+2029. The two separators come from char codes
+// because typed raw either one ends a regex literal and breaks module parsing.
+const JS_EOL = new RegExp(`\\r\\n?|[${String.fromCharCode(0x2028, 0x2029)}]`, 'g');
 const JS_TAG = /<[A-Za-z/!][^<>]*>/g;
-function dropBlockComments(line) {
-  let out = '', at = 0;
-  for (let a = line.indexOf('/*'); a !== -1; a = line.indexOf('/*', at)) {
-    const b = line.indexOf('*/', a + 2);
-    if (b === -1) break;
-    out += `${line.slice(at, a)} `;
-    at = b + 2;
+const JS_WAIVER_BODY = /^\s*claim-waiver(?![\w-])(.*)$/;
+// A '/' starts a regex literal after one of these characters or keywords (the usual previous-token heuristic).
+// Only the comment ranges the tokenizer returns are blanked, so a misread hides text only through a comment it
+// invents. Strings end at a newline that no backslash continues and regexes at their newline, so most misreads stay
+// on their line, where a misread '//' can hide the rest of it. A '/*' with no '*/' after it is read as code (valid
+// JS never has one, as mdStructure leaves an unclosed '<!--' as text), but a misread '/*'
+// that pairs with a later real '*/' hides every line up to that '*/' (residual, REVIEW WR-11). A '/' after the ')'
+// that closes an if, while, for or with condition also starts a regex, and a postfix ++ or -- ends an operand, so a
+// '/' after it is division.
+const JS_REGEX_AFTER = new Set('(,=:[!&|?{};+-*%<>~^');
+const JS_REGEX_WORDS = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete', 'void', 'throw',
+  'instanceof', 'yield', 'await']);
+const JS_COND_WORDS = new Set(['if', 'while', 'for', 'with']);
+const JS_WORD = /[A-Za-z0-9_$]/;
+
+// jsCommentRanges(src) -> { ranges, lineComments } for LF-only text: [start, end) of every comment, and each line
+// comment's start offset and body (the text after the two slashes). Single pass: strings end at their quote or at
+// a newline that no backslash continues, an unterminated regex resumes at its newline without searching the skipped
+// text for comments, and a '/*' with no '*/' after it is read as code. The '*/' search is bounded by one
+// lastIndexOf per call, so the pass stays linear.
+function jsCommentRanges(src) {
+  const ranges = [], lineComments = [], frames = [], n = src.length;   // frames: brace depth of each open ${ }
+  const parens = [];   // per open '(': whether it opens an if, while, for or with condition
+  const lastClose = src.lastIndexOf('*/');   // an opener whose body starts after the last '*/' has no close
+  let i = 0, prev = '', word = '';
+  // Template text from i to its closing backtick (back to code) or a ${ (an expression frame opens).
+  const templateText = () => {
+    while (i < n) {
+      const c = src[i];
+      if (c === '\\') i += 2;
+      else if (c === '`') { i++; prev = '`'; word = ''; return; }
+      else if (c === '$' && src[i + 1] === '{') { i += 2; frames.push(0); prev = '{'; word = ''; return; }
+      else i++;
+    }
+  };
+  while (i < n) {
+    const c = src[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (JS_WORD.test(c)) {
+      const from = i;
+      while (i < n && JS_WORD.test(src[i])) i++;
+      word = src.slice(from, i); prev = src[i - 1];
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      let j = i + 1;
+      // A backslash skips the character after it, a newline included (a line continuation).
+      while (j < n && src[j] !== c && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1;
+      i = j < n && src[j] === c ? j + 1 : Math.min(j, n);
+      prev = c; word = '';
+      continue;
+    }
+    if (c === '`') { i++; templateText(); continue; }
+    if (c === '}' && frames.length && frames[frames.length - 1] === 0) { frames.pop(); i++; templateText(); continue; }
+    if (c === '/' && src[i + 1] === '/') {
+      let end = src.indexOf('\n', i);
+      if (end === -1) end = n;
+      ranges.push([i, end]); lineComments.push({ at: i, body: src.slice(i + 2, end) });
+      i = end;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      // Search only when a '*/' exists past the opener; otherwise searching to the end at every opener is quadratic.
+      if (i + 2 <= lastClose) {
+        const end = src.indexOf('*/', i + 2) + 2;
+        ranges.push([i, end]);
+        i = end;
+      } else { prev = '/'; word = ''; i++; }   // no '*/' after it: code, and the '*' is an ordinary operator
+      continue;
+    }
+    if (c === '(') { parens.push(JS_COND_WORDS.has(word)); prev = '('; word = ''; i++; continue; }
+    // A statement starts after a condition's ')', so a '/' there starts a regex; after any other ')' it divides.
+    if (c === ')') { prev = parens.pop() === true ? ';' : ')'; word = ''; i++; continue; }
+    if ((c === '+' || c === '-') && src[i + 1] === c) {
+      // Postfix when an operand precedes it: the operand ends, so a '/' after it is division.
+      const operand = (word && !JS_REGEX_WORDS.has(word)) || prev === ')' || prev === ']';
+      prev = operand ? ')' : c; word = ''; i += 2;
+      continue;
+    }
+    if (c === '/' && (word ? JS_REGEX_WORDS.has(word) : prev === '' || JS_REGEX_AFTER.has(prev))) {
+      let j = i + 1, inClass = false, closed = false;
+      while (j < n && src[j] !== '\n') {
+        const ch = src[j];
+        if (ch === '\\' && src[j + 1] !== '\n') { j += 2; continue; }
+        if (ch === '[') inClass = true;
+        else if (ch === ']') inClass = false;
+        else if (ch === '/' && !inClass) { closed = true; j++; break; }
+        j++;
+      }
+      if (closed) while (j < n && JS_WORD.test(src[j])) j++;
+      i = Math.min(j, n); prev = ')'; word = '';
+      continue;
+    }
+    if (frames.length && c === '{') frames[frames.length - 1]++;
+    else if (frames.length && c === '}') frames[frames.length - 1]--;
+    prev = c; word = '';
+    i++;
   }
-  return out + line.slice(at);
+  return { ranges, lineComments };
 }
 
-// scanJsLines(text, file) -> findings (UNTAGGED_NUMBER, WAIVER_NO_REASON, INPUT_TOO_LARGE) for the user-visible
-// string literals of a demo module, line by line: waiver check, single-line block and // comments dropped,
-// template-markup tags to spaces, entities decoded, then UNIT_NUMBER.
+// scanJsLines(text, file) -> findings (UNTAGGED_NUMBER, WAIVER_NO_REASON, UNKNOWN_ENTITY, FORMAT_CHARACTER,
+// INPUT_TOO_LARGE) for the user-visible
+// string literals of a demo module, in source order: line ends to LF, comments found by jsCommentRanges, waived
+// lines skipped (a placeholder reason is WAIVER_NO_REASON), comments blanked, then per line template-markup tags to
+// spaces, entities decoded, whitespace collapsed and UNIT_NUMBER.
 export function scanJsLines(text, file = '') {
   if (byteLength(text) > MAX_INPUT_BYTES) return [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)];
+  const src = String(text).normalize('NFC').replace(JS_EOL, '\n');
+  // waived: line -> null for a reasoned waiver, or the placeholder reason that makes it WAIVER_NO_REASON.
+  const { ranges, lineComments } = jsCommentRanges(src), lineOf = lineIndex(src), waived = new Map();
+  for (const { at, body } of lineComments) {
+    const w = JS_WAIVER_BODY.exec(body);
+    if (!w) continue;
+    const colon = /^\s*:/.test(w[1]), reason = w[1].replace(/^\s*:/, '');
+    waived.set(lineOf(at), !colon || noReason(reason) ? reason : null);
+  }
   const out = [];
-  String(text).normalize('NFC').split(/\r?\n/).forEach((raw, i) => {
-    const w = JS_WAIVER.exec(raw);
-    if (w) {
-      const colon = /^\s*:/.test(w[1]), reason = w[1].replace(/^\s*:/, '');
-      if (!colon || noReason(reason)) out.push(finding(file, i + 1, 'WAIVER_NO_REASON', `write // claim-waiver: <reason> with a reason the owner can review (got "${fold(reason)}")`));
+  blankRanges(src, ranges).split('\n').forEach((raw, i) => {
+    if (waived.has(i + 1)) {
+      const reason = waived.get(i + 1);
+      if (reason !== null) out.push(finding(file, i + 1, 'WAIVER_NO_REASON', `write // claim-waiver: <reason> with a reason the owner can review (got "${fold(reason)}")`));
       return;
     }
-    let code = dropBlockComments(raw);
-    const c = JS_LINE_COMMENT.exec(code);
-    if (c) code = code.slice(0, c.index);
-    code = decodeEntities(code.replace(JS_TAG, ' ')).replace(/\s+/g, ' ');
+    const code = decodeEntities(raw.replace(JS_TAG, ' ')).replace(FORMAT_CHARS, '').replace(/\s+/g, ' ');
     for (const m of code.matchAll(UNIT_NUMBER)) out.push(finding(file, i + 1, 'UNTAGGED_NUMBER', `"${m[0]}" has a unit but no // claim-waiver: <reason> comment`));
+    residueFindings(code, file, () => i + 1, out);
   });
   return out;
 }
@@ -433,7 +662,7 @@ export function scanJsLines(text, file = '') {
 const lf = (text) => String(text).replace(/\r\n?/g, '\n');
 // The value a marker binds to: the first number token after it on its line, with its unit (or "runs", so a
 // #n marker can bind "10 runs" exactly as an HTML leaf would show it). Trimmed before use.
-const MD_BIND = new RegExp(NUM + String.raw`(?:[\s-]?(?:` + UNIT + String.raw`|runs?|repetitions?|rounds?)(?![\w/]))?`);
+const MD_BIND = new RegExp(NUM + String.raw`(?:[\s-]?(?:` + UNIT + String.raw`|runs?|repetitions?|rounds?)` + UNIT_TAIL + ')?');
 const MD_FENCE = /^[ \t]*(`{3,}|~{3,})/;
 const MD_TAG = /<[A-Za-z/!][^<>]*>/g;
 
@@ -580,7 +809,7 @@ function tableCellFindings(lines, fenced, marks, file) {
 // waiver binds to the first number token after it on its line. Block waivers and claims-table blocks
 // (checked by checkTables) are not scanned; an unterminated block is a finding and its text is still scanned.
 // Findings: MD_MARKER_NO_NUMBER, WAIVER_NO_REASON, WAIVER_UNTERMINATED, TABLE_CELL_UNTAGGED, UNTAGGED_NUMBER,
-// INPUT_TOO_LARGE, in line order with true source lines.
+// UNKNOWN_ENTITY, FORMAT_CHARACTER, INPUT_TOO_LARGE, in line order with true source lines.
 export function scanMarkdown(text, file = '') {
   if (byteLength(text) > MAX_INPUT_BYTES) return { markers: [], findings: [finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)] };
   const src = lf(text).normalize('NFC'), p = mdParse(src), lt = lineTable(src), markers = [], out = [];
@@ -629,8 +858,9 @@ export function scanMarkdown(text, file = '') {
   out.push(...tableCellFindings(lines, p.fenced, marks, file));
   lines.forEach((raw, i) => {
     if (!/\d/.test(raw)) return;   // no digit, no unit-number (a numeric entity such as &#49; holds digits itself)
-    const visible = decodeEntities(raw.replace(MD_TAG, ' ')).replace(/\s+/g, ' ');
+    const visible = decodeEntities(raw.replace(MD_TAG, ' ')).replace(FORMAT_CHARS, '').replace(/\s+/g, ' ');
     for (const m of visible.matchAll(UNIT_NUMBER)) out.push(mdUntagged(file, i + 1, m[0]));
+    residueFindings(visible, file, () => i + 1, out);
   });
   return { markers, findings: out.sort((a, b) => a.line - b.line) };
 }

@@ -142,6 +142,7 @@ function canvasAddsNoise() {
 }
 
 // ---------- UI ----------
+const UPLOAD_HINT = 'JPEG, PNG, WebP, GIF, AVIF — anything your browser can open · up to 6 MB'; // claim-waiver: states the service MAX_UPLOAD_MB default (design fact iqg.config.max_upload_mb); Phase 4 replaces this demo
 const TEMPLATE = `
 <div class="demo-iqg">
   <div class="demo-card demo-iqg-in">
@@ -151,7 +152,7 @@ const TEMPLATE = `
         <p class="demo-drop-title" data-drop-title>Drop an image here</p>
         <p class="demo-small">or</p>
         <label class="project-link demo-file">Choose file<input type="file" accept="image/*" class="vh" data-file></label>
-        <p class="demo-small">JPEG, PNG, WebP, GIF, AVIF — anything your browser can open · up to 6 MB</p><!-- // claim-waiver: states the service MAX_UPLOAD_MB default (design fact iqg.config.max_upload_mb); Phase 4 replaces this demo -->
+        <p class="demo-small">${UPLOAD_HINT}</p>
       </div>
       <img class="demo-preview" data-preview alt="" decoding="async" hidden>
     </div>
