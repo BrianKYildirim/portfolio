@@ -43,28 +43,42 @@
       <span class="demo-pill">Runs in your browser</span>
       <span class="demo-pill demo-pill-synthetic">Synthetic traffic</span>
     </div>
-    <div class="fidelity is-sim">
-      <span class="fidelity-label">Ported project logic · simulated clock</span>
-      <p>A line-for-line JavaScript port of the library's token-bucket decision at commit <code>62e0c26</code>
-        (<code>consume()</code>: integer
-        nanotoken refill, new keys start full, <code>remaining</code> and <code>reset_ms</code> exactly as
-        <code>allow()</code> returns them), checked against the library's unit tests. Time and traffic are simulated;
-        nothing here measures native speed.</p>
+    <div class="fidelity">
+      <span class="fidelity-label">The real library, compiled to WebAssembly</span>
+      <p>Every decision and bucket reading here comes from ratelimit-cpp itself at commit
+        <code data-wasm-pin="ratelimit">b577e6f</code>, compiled to single-threaded WebAssembly and called through its C
+        API (<code>rl_allow_at</code>, <code>rl_inspect_at</code>). The traffic is synthetic and the clock is virtual;
+        nothing here measures speed.</p>
       <details>
-        <summary>What's ported</summary>
+        <summary>What runs here</summary>
         <ul>
-          <li>Ported from <code>src/inproc_rate_limiter.cpp</code>: <code>consume()</code>, <code>Full::allowed</code> /
-            <code>Full::denied</code>, <code>kUnit</code>, <code>kMaxCapacity</code>, <code>kQuietNs</code>, and "new
-            keys start full" from <code>decide_locked</code>. <code>Limit</code> and <code>Decision</code> from
-            <code>include/ratelimit/types.h</code>. 64-bit unsigned arithmetic is emulated with BigInt so overflow and
-            saturation behave like the C++.</li>
-          <li>Verified with the 16 deterministic tests of the <code>Core</code> suite in
-            <code>tests/test_core.cpp</code>, transcribed to JavaScript.</li>
-          <li>Not ported: sharding, the lock-free hash table, epoch-based reclamation, <code>FastClock</code> and
-            <code>evict_idle()</code>. Keys live in a JavaScript <code>Map</code>.</li>
-          <li>Simulated: the clock (advanced by animation frames × speed) and the traffic (steady or seeded Poisson
-            arrivals). The bucket level shown between calls is computed for display; the library itself refills only
-            when <code>allow()</code> runs.</li>
+          <li>Source: <a href="https://github.com/BrianKYildirim/ratelimit-cpp/tree/b577e6f3b0329c93b7cf869188048eb21d5beff2"
+              target="_blank" rel="noopener noreferrer">the ratelimit-cpp tree at this commit</a> and the <a
+              href="scripts/demos/wasm/ratelimit.manifest.json" target="_blank" rel="noopener noreferrer">build
+              manifest</a>.</li>
+          <li>Built by the library's <code>scripts/build-wasm.sh</code> with Emscripten 7.0.0, and rebuilt from the
+            pinned commit to identical bytes. The manifest records the toolchain, the flags and the hash of each
+            file.</li>
+          <li>A parity test replays shared request traces through native builds (GCC and MSVC) and through this
+            WebAssembly build, and requires identical decisions and inspection values. All three builds matched, and
+            this site's automated tests replay the same traces through the shipped module against the recorded native
+            output.</li>
+          <li>Differences from native:
+            <ul>
+              <li>One thread, so there is no lock contention to observe.</li>
+              <li>The demo passes its own virtual time to <code>rl_allow_at</code> and <code>rl_inspect_at</code>. The
+                library's header says that time should come from <code>rl_now_ns</code>.</li>
+              <li><code>FastClock</code> and the TSC are not used. The one clock reading left, a
+                <code>steady_clock</code> reading that seeds the hash table, only places keys in slots and never
+                changes a decision.</li>
+              <li><code>rl_evict_idle</code> is not exported, so it is never called.</li>
+              <li>A C++ exception stops the WebAssembly module (the build keeps Emscripten's default exception
+                handling), and the demo then offers Retry, which loads a fresh module. Natively, of the functions the
+                demo calls, only <code>rl_new_inproc</code> (which returns NULL) and <code>rl_free</code> catch
+                exceptions; <code>rl_allow_at</code> and <code>rl_inspect_at</code> have no catch blocks.</li>
+              <li>The toolchain is Emscripten rather than GCC or MSVC.</li>
+            </ul>
+          </li>
         </ul>
       </details>
     </div>
@@ -235,8 +249,8 @@ if (tokens &gt;= kUnit) {
         href="https://github.com/BrianKYildirim/ratelimit-cpp/blob/eef537d7e8d48686dc88410bceb9dfecce95aa28/README.md#performance-what-i-measured-and-how"
         target="_blank" rel="noopener noreferrer">Performance: what I measured and how</a> describes how each
       benchmark is run, the method and both machines, with full tables for both environments (as of
-      <code>eef537d</code>). The playground above runs the decision logic in JavaScript on a simulated clock and
-      measures nothing about native speed.</p>
+      <code>eef537d</code>). The playground above runs the library itself, compiled to WebAssembly, on a virtual clock
+      with synthetic traffic; it shows no timings and measures nothing about native or multithreaded speed.</p>
   </div>
 </section>
 

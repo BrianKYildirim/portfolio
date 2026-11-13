@@ -1,5 +1,5 @@
-// Binds the C API of ratelimit-cpp (include/ratelimit/ratelimit_c.h) compiled to wasm32 by scripts/build-wasm.sh;
-// the commit is in wasm/ratelimit.manifest.json. Structs follow the wasm32 Basic C ABI: by-value structs go by
+// Binds the C API of ratelimit-cpp (include/ratelimit/ratelimit_c.h at b577e6f) compiled to wasm32 by scripts/build-wasm.sh;
+// the build is recorded in wasm/ratelimit.manifest.json. Structs follow the wasm32 Basic C ABI: by-value structs go by
 // pointer, struct returns via a leading sret pointer.
 
 // Clock (D-01): callers pass their own virtual now_ns to rl_allow_at/rl_inspect_at, where the header says times

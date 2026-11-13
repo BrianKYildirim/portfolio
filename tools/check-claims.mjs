@@ -16,10 +16,11 @@ import { readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises
 import path from 'node:path';
 import { MAX_INPUT_BYTES, loadClaims, validateClaims, locateClaims, checkComparison, extractTaggedLeaves, checkTagged,
   scanHtml, scanJsLines, scanMarkdown, checkTables, checkMethodology, applyTables, validateResultsDir, sortFindings,
-  formatFinding, extractPins, checkPins, createSources, checkEvidence, fillValues, spliceClaims } from './claims-lib.mjs';
+  formatFinding, extractPins, checkPins, createSources, checkEvidence, fillValues, spliceClaims, extractWasmPins,
+  checkWasmManifests } from './claims-lib.mjs';
 
 // The default run (no --only) runs every check listed here.
-const CHECKS = ['claims', 'html', 'js', 'readme', 'tables', 'methodology', 'evidence', 'pins'];
+const CHECKS = ['claims', 'html', 'js', 'readme', 'tables', 'methodology', 'evidence', 'pins', 'wasm'];
 const README_CHECKS = ['readme', 'tables', 'methodology'];
 // The upstream READMEs read from a source (GitHub or --local): the three projects Phase 2 benchmarks. Another
 // repo's README is checked only when it is given with --readme-file.
@@ -183,6 +184,30 @@ async function checkPagePins(root, scope, doc, isReachable) {
   }
   findings.push(...await checkPins(pins, { isReachable }));
   return { findings, pinCount: pins.length };
+}
+
+// D-06: each scripts/demos/wasm/<name>.manifest.json against the bytes it lists, the reachability of its commit and
+// the <code data-wasm-pin="<name>"> pins in the pages. A root without that directory has no manifests. With
+// --project, only that repo's manifests count (an unreadable manifest counts: it is reported whatever the scope).
+async function checkWasm(root, scope, isReachable, { repos, project }) {
+  let names;
+  try {
+    names = await readdir(path.join(root, 'scripts', 'demos', 'wasm'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    names = [];
+  }
+  const manifests = [];
+  for (const f of names.filter((n) => n.endsWith('.manifest.json')).sort()) {
+    const file = `scripts/demos/wasm/${f}`;
+    manifests.push({ name: f.slice(0, -'.manifest.json'.length), file, text: await readFile(path.join(root, file), 'utf8') });
+  }
+  const pins = [];
+  for (const rel of await htmlFiles(root, scope)) pins.push(...extractWasmPins(await readFile(path.join(root, rel), 'utf8'), rel));
+  const findings = await checkWasmManifests({ manifests, pins, repos, root, readFile, readdir, isReachable, project });
+  const repoOf = (mf) => { try { return JSON.parse(mf.text)?.repo; } catch { return undefined; } };
+  const counted = manifests.filter((mf) => project === undefined || typeof repoOf(mf) !== 'string' || repoOf(mf) === project);
+  return { findings, manifestCount: counted.length };
 }
 
 async function checkJs(root, scope) {
@@ -383,7 +408,7 @@ async function main() {
   const claimsById = new Map();
   for (const c of claims) if (c && typeof c.id === 'string' && !claimsById.has(c.id)) claimsById.set(c.id, c);
   const findings = [];
-  let leafCount = 0, pinCount = 0;
+  let leafCount = 0, pinCount = 0, wasmCount = null;
   if (only.includes('claims')) findings.push(...checkClaimsFile(doc, text, claimsFile, claimsById));
   try {
     const scope = opt.project === undefined ? null : await projectScope(root, doc, opt.project);
@@ -404,6 +429,11 @@ async function main() {
       findings.push(...r.findings);
       pinCount = r.pinCount;
     }
+    if (only.includes('wasm')) {
+      const r = await checkWasm(root, scope, sources.isReachable, { repos, project: opt.project });
+      findings.push(...r.findings);
+      wasmCount = r.manifestCount;
+    }
   } catch (err) {
     report(`[check-claims] I/O error: ${err.message}`);
     return 2;
@@ -412,7 +442,7 @@ async function main() {
   for (const f of sortFindings(findings)) report(formatFinding(f));
   report(findings.length
     ? `[check-claims] ${findings.length} finding(s)`
-    : `[check-claims] ok (checks: ${only.join(', ')}; ${claims.length} claim(s), ${leafCount} tagged value(s), ${pinCount} pin(s))`);
+    : `[check-claims] ok (checks: ${only.join(', ')}; ${claims.length} claim(s), ${leafCount} tagged value(s), ${pinCount} pin(s)${wasmCount === null ? '' : `, ${wasmCount} wasm manifest(s)`})`);
   return findings.length ? 1 : 0;
 }
 

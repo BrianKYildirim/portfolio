@@ -1679,6 +1679,159 @@ export async function checkPins(pins, { isReachable, concurrency = 4 } = {}) {
   return sortFindings(out);
 }
 
+// ---------- WASM ----------
+// D-06: the committed WebAssembly artifacts in scripts/demos/wasm/ and their vendored parity fixtures must match
+// their manifest (<name>.manifest.json, schema wasm-manifest/1) byte for byte, the commit the manifest names must be
+// reachable from that repo's default branch, and the page must pin the same commit in <code data-wasm-pin="<name>">.
+export const WASM_MANIFEST_SCHEMA = 'wasm-manifest/1';
+const WASM_DIR = 'scripts/demos/wasm';
+const WASM_PIN_TAG = /<([A-Za-z][A-Za-z0-9-]*)(\s[^<>]*)>/g;
+// The line of the first "key": in a manifest's text (1 when absent), so a finding points at the entry.
+const keyLine = (text, key) => { const i = text.indexOf(`${JSON.stringify(key)}:`); return i < 0 ? 1 : lineIndex(text)(i); };
+
+// A manifest is <name>.manifest.json; artifact names are plain file names in scripts/demos/wasm/ (never a path).
+const WASM_NAME = /^[a-z0-9][a-z0-9_-]*$/;
+const ARTIFACT_NAME = /^(?!\.{1,2}$)[A-Za-z0-9._-]+$/;
+const manifestStem = (file) => String(file).replace(/\\/g, '/').split('/').pop().replace(/\.manifest\.json$/, '');
+// A path that resolves inside root: the traversal guard behind safePath's rules (no "..", no leading "/", no "\").
+const inside = (root, abs) => { const r = path.relative(path.resolve(root), abs); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
+
+// Problems with a files map of { bytes, sha256 } entries; where names the map in messages.
+function entryProblems(files, where, okName) {
+  if (!isObj(files) || !Object.keys(files).length) return [`${where} must list at least one file`];
+  const out = [];
+  for (const [k, e] of Object.entries(files)) {
+    if (!okName(k)) out.push(`${where} entry ${JSON.stringify(k)} is not ${where === 'files' ? 'a plain file name' : 'a repo-relative path (forward slashes, no "..", no leading "/")'}`);
+    else if (!isObj(e) || !Number.isSafeInteger(e.bytes) || e.bytes < 0 || !SHA256_RE.test(String(e.sha256))) {
+      out.push(`${where} entry ${JSON.stringify(k)} needs bytes (a non-negative integer) and sha256 (64 lowercase hex)`);
+    }
+  }
+  return out;
+}
+
+// parseWasmManifest(text, file, { repos }) -> { manifest, findings }. manifest is null when anything is wrong, so a
+// manifest is either fully valid or not used at all. repos is the claims file's repos map (the repo must be a key).
+export function parseWasmManifest(text, file, { repos = {} } = {}) {
+  const fail = (list) => ({ manifest: null, findings: list });
+  if (byteLength(String(text)) > MAX_INPUT_BYTES) return fail([finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)]);
+  let m;
+  try { m = JSON.parse(text); } catch (err) { return fail([finding(file, 1, 'WASM_MANIFEST', `not valid JSON (${err.message})`)]); }
+  if (!isObj(m)) return fail([finding(file, 1, 'WASM_MANIFEST', 'must be a JSON object')]);
+  const out = [], bad = (key, msg) => out.push(finding(file, keyLine(text, key), 'WASM_MANIFEST', msg));
+  if (m.schema !== WASM_MANIFEST_SCHEMA) bad('schema', `schema is ${JSON.stringify(m.schema)}, expected "${WASM_MANIFEST_SCHEMA}"`);
+  const stem = manifestStem(file);
+  if (typeof m.name !== 'string' || !WASM_NAME.test(m.name) || m.name !== stem) bad('name', `name is ${JSON.stringify(m.name)}, expected "${stem}" (the file name before .manifest.json)`);
+  if (typeof m.repo !== 'string' || !isObj(repos) || !Object.hasOwn(repos, m.repo)) bad('repo', `repo ${JSON.stringify(m.repo)} is not a repo in ${CLAIMS_FILE}`);
+  if (!SHA_RE.test(String(m.sha))) bad('sha', `sha is ${JSON.stringify(m.sha)}, expected a full 40-hex commit SHA`);
+  for (const p of entryProblems(m.files, 'files', (k) => ARTIFACT_NAME.test(k) && !k.endsWith('.manifest.json'))) bad('files', p);
+  if (m.parity !== undefined) {
+    if (!isObj(m.parity)) {
+      bad('parity', 'parity must be an object with dir and files');
+    } else {
+      if (!safePath(m.parity.dir)) bad('parity', `parity.dir ${JSON.stringify(m.parity.dir)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+      for (const p of entryProblems(m.parity.files, 'parity.files', safePath)) bad('parity', p);
+    }
+  }
+  return out.length ? fail(out) : { manifest: m, findings: [] };
+}
+
+// extractWasmPins(html, file) -> [{ name, sha, tag, file, line }] for every element carrying data-wasm-pin.
+// Comments are blanked first, as in extractPins. sha is the trimmed text up to the closing tag.
+export function extractWasmPins(html, file = '') {
+  const src = blankComments(String(html)), lineOf = lineIndex(src), out = [];
+  for (const m of src.matchAll(WASM_PIN_TAG)) {
+    const name = attr(m[2], 'data-wasm-pin');
+    if (name === null) continue;
+    const tag = m[1].toLowerCase(), start = m.index + m[0].length, end = src.indexOf(`</${m[1]}`, start);
+    out.push({ name, sha: end < 0 ? '' : src.slice(start, end).trim(), tag, file, line: lineOf(m.index) });
+  }
+  return out;
+}
+
+// The bytes and sha256 of one listed file against its manifest entry.
+async function hashFindings(readFile, abs, rel, entry, file, line) {
+  let buf;
+  try {
+    buf = bytesOf(await readFile(abs));
+  } catch (err) {
+    return [finding(file, line, 'WASM_HASH', `${rel} is listed but ${err?.code === 'ENOENT' ? 'missing on disk' : `unreadable (${err?.code ?? err?.message})`}`)];
+  }
+  const sha = createHash('sha256').update(buf).digest('hex');
+  if (sha === entry.sha256 && buf.length === entry.bytes) return [];
+  return [finding(file, line, 'WASM_HASH', `${rel}: on disk ${buf.length} bytes sha256 ${sha}, the manifest says ${entry.bytes} bytes sha256 ${entry.sha256}`)];
+}
+
+// Every file below rel (recursive) as repo-relative paths; a missing directory is empty (its listed files then fail
+// WASM_HASH as missing).
+async function filesBelow(readdir, root, rel) {
+  try {
+    return (await listFiles(readdir, path.resolve(root, ...rel.split('/')), rel)).sort(byteOrder);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+// checkWasmManifests({ manifests, pins, repos, root, readFile, readdir, isReachable, project }) -> Promise<findings>.
+//   manifests  [{ name (file stem), file (repo-relative label), text }] for every scripts/demos/wasm/*.manifest.json
+//   pins       extractWasmPins() results from the pages in scope
+//   project    --project: only manifests for that repo are checked, and the shared directory is not scanned
+// Findings: WASM_MANIFEST and INPUT_TOO_LARGE (parseWasmManifest), WASM_HASH (missing file, wrong bytes or sha256),
+// WASM_UNLISTED (a file in scripts/demos/wasm or a parity dir that no manifest lists), WASM_PIN_MISMATCH,
+// WASM_UNPINNED, WASM_NO_MANIFEST, and PIN_UNREACHABLE or COULD_NOT_VERIFY from checkPins (fail closed: unknown
+// reachability is never a pass). Messages name repo-relative paths only.
+export async function checkWasmManifests({ manifests = [], pins = [], repos = {}, root = '.', readFile = fsReadFile,
+  readdir = fsReaddir, isReachable, project } = {}) {
+  const out = [], reach = [], listed = new Set(), names = new Set(manifests.map((mf) => mf.name));
+  const abs = (rel) => path.resolve(root, ...rel.split('/'));
+  for (const mf of manifests) {
+    // Out of --project scope only when the manifest is readable enough to name another repo.
+    let repo;
+    try { repo = JSON.parse(mf.text)?.repo; } catch { /* unreadable: parseWasmManifest reports it, whatever the scope */ }
+    if (project !== undefined && typeof repo === 'string' && repo !== project) continue;
+    const { manifest: m, findings } = parseWasmManifest(mf.text, mf.file, { repos });
+    out.push(...findings);
+    if (!m) continue;
+    const at = (key) => keyLine(mf.text, key);
+    const hashed = async (rel, e, key) => (inside(root, abs(rel)) ? hashFindings(readFile, abs(rel), rel, e, mf.file, at(key))
+      : [finding(mf.file, at(key), 'WASM_MANIFEST', `${rel} resolves outside the repo`)]);
+    for (const [name, e] of Object.entries(m.files)) {
+      listed.add(`${WASM_DIR}/${name}`);
+      out.push(...await hashed(`${WASM_DIR}/${name}`, e, name));
+    }
+    if (m.parity) {
+      const dir = m.parity.dir, want = new Set();
+      for (const [p, e] of Object.entries(m.parity.files)) {
+        want.add(`${dir}/${p}`);
+        out.push(...await hashed(`${dir}/${p}`, e, p));
+      }
+      for (const f of inside(root, abs(dir)) ? await filesBelow(readdir, root, dir) : []) {
+        if (!want.has(f)) out.push(finding(mf.file, at('parity'), 'WASM_UNLISTED', `${f} is in ${dir} but not listed (and hashed) in parity.files`));
+      }
+    }
+    reach.push({ repo: m.repo, sha: m.sha, file: mf.file, line: at('sha'), kind: 'wasm' });
+    const mine = pins.filter((p) => p.name === mf.name);
+    if (!mine.length) out.push(finding(mf.file, at('name'), 'WASM_UNPINNED', `no page pins this build; expected <code data-wasm-pin="${mf.name}">${m.sha.slice(0, 7)}</code>`));
+    for (const p of mine) {
+      if (p.tag !== 'code' || !PIN_SHA.test(p.sha) || !m.sha.startsWith(p.sha)) {
+        out.push(finding(p.file, p.line, 'WASM_PIN_MISMATCH', `<${p.tag} data-wasm-pin="${p.name}"> holds ${JSON.stringify(p.sha)}, expected <code> holding the start of ${m.sha} (${mf.file})`));
+      }
+    }
+  }
+  for (const p of pins) {
+    if (!names.has(p.name)) out.push(finding(p.file, p.line, 'WASM_NO_MANIFEST', `data-wasm-pin="${p.name}" names ${WASM_DIR}/${p.name}.manifest.json, which does not exist`));
+  }
+  // The shared directory belongs to no single project, so only an unscoped run scans it.
+  if (project === undefined) {
+    for (const f of await filesBelow(readdir, root, WASM_DIR)) {
+      const top = !f.slice(WASM_DIR.length + 1).includes('/');
+      if (!(top && f.endsWith('.manifest.json')) && !listed.has(f)) out.push(finding(f, 1, 'WASM_UNLISTED', `${f} is not listed (and hashed) in any ${WASM_DIR}/*.manifest.json`));
+    }
+  }
+  out.push(...await checkPins(reach, { isReachable }));
+  return sortFindings(out);
+}
+
 // ---------- GitHub ----------
 // Read-only GitHub calls with an injected fetch. The token goes only into the Authorization header of
 // api.github.com requests and never into a message; a reason names the URL path and the HTTP status only (T-02-06).

@@ -1,0 +1,207 @@
+{
+ "schema": "wasm-manifest/1",
+ "name": "ratelimit",
+ "repo": "ratelimit-cpp",
+ "sha": "b577e6f3b0329c93b7cf869188048eb21d5beff2",
+ "source": {
+  "tree_url": "https://github.com/BrianKYildirim/ratelimit-cpp/tree/b577e6f3b0329c93b7cf869188048eb21d5beff2",
+  "header": "include/ratelimit/ratelimit_c.h"
+ },
+ "toolchain": {
+  "emsdk_version": "7.0.0",
+  "emscripten_release": "6afbd83493d647051772d491124187d4e9a0cda9",
+  "emsdk_sha": "708dcbcc9ee23bc7d2dad44fc90db377e38b771c",
+  "emcc_version": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 7.0.0 (777e6e5db7b4990bcaeb1b9998ed642cc84e6629)",
+  "node_version": "v24.19.0"
+ },
+ "build": {
+  "environment": "ubuntu-wsl2",
+  "script": "scripts/build-wasm.sh",
+  "command": "bash scripts/build-wasm.sh <out-dir>",
+  "cmake_defines": {
+   "CMAKE_BUILD_TYPE": "Release",
+   "RL_BUILD_WASM": "ON",
+   "RL_BUILD_SHARED": "OFF",
+   "RL_BUILD_TESTS": "OFF",
+   "RL_BUILD_BENCH": "OFF",
+   "RL_BUILD_JNI": "OFF",
+   "RL_BUILD_TS": "0",
+   "RL_GIT_DESCRIBE": "wasm"
+  },
+  "link_flags": [
+   "-O3",
+   "--no-entry",
+   "-sMODULARIZE=1",
+   "-sEXPORT_ES6=1",
+   "-sENVIRONMENT=web,node",
+   "-sFILESYSTEM=0",
+   "-sDYNAMIC_EXECUTION=0",
+   "-sALLOW_MEMORY_GROWTH=1",
+   "-sEXPORTED_RUNTIME_METHODS=HEAPU8",
+   "-sEXPORTED_FUNCTIONS=_rl_version,_rl_new_inproc,_rl_allow_at,_rl_inspect_at,_rl_free,_malloc,_free"
+  ],
+  "exports": [
+   "rl_version",
+   "rl_new_inproc",
+   "rl_allow_at",
+   "rl_inspect_at",
+   "rl_free",
+   "malloc",
+   "free"
+  ],
+  "not_exported": [
+   "rl_evict_idle",
+   "rl_now_ns",
+   "rl_allow",
+   "rl_inspect",
+   "rl_try_acquire"
+  ],
+  "not_used": [
+   "-sWASM_BIGINT: BigInt integration is the default since Emscripten 4.0.0 and the flag is deprecated since 6.0.8 (owner decision 2026-11-12, amends D-03)",
+   "-fwasm-exceptions: Emscripten's default is kept, so a C++ throw aborts the module; natively, of the exported functions only rl_new_inproc (which returns NULL) and rl_free catch exceptions, and rl_allow_at and rl_inspect_at have no catch blocks (owner decision 2026-11-12)",
+   "-pthread: single-threaded build (D-04)"
+  ]
+ },
+ "files": {
+  "ratelimit.mjs": {
+   "bytes": 7570,
+   "sha256": "78d157eb5f371a6f1cb43360a57ef5470dfe5b04252715e06ce8f5a650da906d"
+  },
+  "ratelimit.wasm": {
+   "bytes": 20870,
+   "sha256": "1288b71e9e56dcfe8e649a6e777d33aa011d7c4fd46fca3f4c7bd2c0fceb2c91"
+  }
+ },
+ "parity": {
+  "dir": "tools/test/fixtures/ratelimit-parity",
+  "source_path": "tests/parity",
+  "files": {
+   "golden/edge-c-api-inspection.out": {
+    "bytes": 528,
+    "sha256": "89c70aeb458ce2cb935f3bcff0f094f38b9b88c94259f01098302f8e9c7a9b86"
+   },
+   "golden/edge-capacity-clamp.out": {
+    "bytes": 1292,
+    "sha256": "2c17941f21fa9c152de1d6e1c0851fd9ae54df98f549297ae22bc2a66f25d7c3"
+   },
+   "golden/edge-capacity-zero.out": {
+    "bytes": 328,
+    "sha256": "a39a30920d7e8ed3b6ddd8bc2994c2ba16e80788d5a30a4472609fe38be15f31"
+   },
+   "golden/edge-clock-backwards.out": {
+    "bytes": 333,
+    "sha256": "76e3c7d29c91681f3257c21559786ef1b82b022007b75389a09e92a9d195652f"
+   },
+   "golden/edge-first-nanosecond.out": {
+    "bytes": 612,
+    "sha256": "e01cf3ba1ff1e9fa27422cfce73db16f3e1a385ced8f5234578101475700d733"
+   },
+   "golden/edge-initial-full.out": {
+    "bytes": 114,
+    "sha256": "e170dc34d333f94f2c4b1b69ca22ca57d6eac81677535921589c9739330f1d7a"
+   },
+   "golden/edge-keys.out": {
+    "bytes": 1302,
+    "sha256": "a501d76e210b897f75a81292eaeaf2c8b8120f65788f7cef0be855315e0c4b6a"
+   },
+   "golden/edge-lowered-capacity.out": {
+    "bytes": 453,
+    "sha256": "854b3e73636172f44001f552c21f229c2b4a34e8494f1925515caade2565db61"
+   },
+   "golden/edge-overflow.out": {
+    "bytes": 484,
+    "sha256": "0563df37fe11ea58a0d88ee3748e26c9b649a3bc2276d9b538ea1499316929b5"
+   },
+   "golden/edge-quiet-denial.out": {
+    "bytes": 512,
+    "sha256": "20fa0681ab3700d6f009af0349e91d5643543ae78c02cb16b5e8e2992e969d15"
+   },
+   "golden/edge-rate-zero.out": {
+    "bytes": 467,
+    "sha256": "7dcd24551b37ea21d964c86d5397012539f40eb188a19ab5c0d0f45709c6dd64"
+   },
+   "golden/random-r1.out": {
+    "bytes": 9035,
+    "sha256": "60c910edd735ab4ac02910550a0ec45241c45067db5c14ae57e1f25085921959"
+   },
+   "golden/random-r2.out": {
+    "bytes": 9213,
+    "sha256": "023afbea77a69f1c4d88b0b73fc9b7bb9963c427ff9690514c7c726ee436c04a"
+   },
+   "golden/random-r3.out": {
+    "bytes": 19411,
+    "sha256": "94c772e87c9ce115bdb68baa68bc50c42871d74c80cd8e1822a20cf6cafc216f"
+   },
+   "golden/random-r4.out": {
+    "bytes": 11681,
+    "sha256": "c71cde6d0b21abd7f95b721c6be8555a7ae6ddea768f6decda45e780c6abffe0"
+   },
+   "traces/edge-c-api-inspection.jsonl": {
+    "bytes": 1054,
+    "sha256": "bb3cde833f002ce14b5d0e9308505dd9c8d4f8e9ae46086ffba656a66d1a1245"
+   },
+   "traces/edge-capacity-clamp.jsonl": {
+    "bytes": 1743,
+    "sha256": "b0c0ce8816573381abcd1fceebb92c698eaf7715a6c59b1e6be8f464325630e2"
+   },
+   "traces/edge-capacity-zero.jsonl": {
+    "bytes": 801,
+    "sha256": "d5b1d8403bd2f6ed8c8f3bd404985184708725c72e585ec8489a32eff10e55e9"
+   },
+   "traces/edge-clock-backwards.jsonl": {
+    "bytes": 741,
+    "sha256": "a7abe1511a639dc1f01fd7b742157a0be2cb7ba79d6ffc8536ed5f131b910f23"
+   },
+   "traces/edge-first-nanosecond.jsonl": {
+    "bytes": 2047,
+    "sha256": "a16759b787443b0197186c31815922776e136e1819ee041d58bd9e9614f06aed"
+   },
+   "traces/edge-initial-full.jsonl": {
+    "bytes": 389,
+    "sha256": "7cdd098e6e28c2f8afd75f13e63a4c6e5a49b9c994140bbb4ea1b106aa1d7d93"
+   },
+   "traces/edge-keys.jsonl": {
+    "bytes": 12650,
+    "sha256": "cac36de8c8d4a1915c1070dfdc7863254403b47484b1756c0b6dd1712aedaeef"
+   },
+   "traces/edge-lowered-capacity.jsonl": {
+    "bytes": 1006,
+    "sha256": "720626583ec5a57bfc4068b59e1d0be8f82a06c2e24b40518c1e6614343227ce"
+   },
+   "traces/edge-overflow.jsonl": {
+    "bytes": 2026,
+    "sha256": "deb9d7d4b72cc0de3242ceb3a65b750999f4bb9378742f97cd3fba0b412d62d8"
+   },
+   "traces/edge-quiet-denial.jsonl": {
+    "bytes": 1111,
+    "sha256": "a9d5ab5fced2894c69a0c5e86615d7826221608cf83ab8c1db63f68706f2bf48"
+   },
+   "traces/edge-rate-zero.jsonl": {
+    "bytes": 881,
+    "sha256": "61292256ee50c462db5be49d85205286e769631abca4ff18587f312d2fddaef4"
+   },
+   "traces/random-r1.jsonl": {
+    "bytes": 23218,
+    "sha256": "43bad1d209a01f9ab04e326dfea833a5453765dd435da69998a91a60ec656e22"
+   },
+   "traces/random-r2.jsonl": {
+    "bytes": 30295,
+    "sha256": "165846830787cc428c95752fc605e0d20a8d1d2ad25fd6b8516a42ae8860ec29"
+   },
+   "traces/random-r3.jsonl": {
+    "bytes": 93408,
+    "sha256": "d6b0f546949fb68d82826da89bb34b1878920815ab82c8cf72a21a0f12a16ece"
+   },
+   "traces/random-r4.jsonl": {
+    "bytes": 34482,
+    "sha256": "bda2da04ceca6af9e99c75cb1b8cad3075860eb62cf928ccc4d95b1ff9149bbe"
+   }
+  }
+ },
+ "reproduced": {
+  "date": "2026-11-13",
+  "builds": 2,
+  "identical": true,
+  "from": "clean clones of github.com/BrianKYildirim/ratelimit-cpp at sha, built in two different directories"
+ }
+}
