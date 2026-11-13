@@ -80,7 +80,9 @@ portfolio/
 │   ├── project-detail.js           # Project panel and its project registry
 │   └── demos/                      # Interactive demos, each with its engine
 │       ├── ratelimit.js
-│       ├── ratelimit-core.js
+│       ├── ratelimit-traffic.js
+│       ├── ratelimit-wasm.js
+│       ├── wasm/                   # Pinned WebAssembly build of ratelimit-cpp and its manifest
 │       ├── iqg.js
 │       ├── iqg-core.js
 │       ├── iqg-worker.js
