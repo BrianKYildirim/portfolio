@@ -1,66 +1,20 @@
-// Rate Limiter Playground: simulated clients call the ported token-bucket decision
-// (ratelimit-core.js) on a virtual clock. Traffic is pure and exported for tests; mount() builds the UI.
-import { TokenBucketLimiter } from './ratelimit-core.js';
+// Rate Limiter Playground: synthetic clients call ratelimit-cpp's rl_allow_at, compiled to WebAssembly, on a virtual
+// clock (ratelimit-traffic.js, ratelimit-wasm.js). mount() builds the UI; Replay reruns a recorded session from time 0.
+import { Run, ALL_KEYS, parseSeed, randomSeed } from './ratelimit-traffic.js';
+import { loadLimiterModule, Limiter, RL_NEVER, formatTokens, formatWait } from './ratelimit-wasm.js';
 
 const CAP = 10_000; // ring-buffer size for drawn events
 const DEFAULT_RATES = [8, 3, 12, 1];
 const RUNS = [[10, '10 s'], [30, '30 s'], [60, '60 s'], [0, 'Unlimited']]; // claim-waiver: run-length option labels in the playground, not measurements
 const SPEEDS = [0.5, 1, 2];
+const SKELETON = '<div class="pd-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>';
+// Retry is bound by the demo's own data-retry: the case study's global retry class reloads the whole write-up.
+const LOAD_ERROR = '<div class="pd-error"><p>Couldn’t load this demo.</p><div><button type="button" class="project-link" data-retry>Retry</button></div></div>';
 
-export function mulberry32(a) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Arrivals per client on a BigInt nanosecond clock. Steady clients arrive every round(1e9 / rate) ns,
-// random ones after exponential gaps (Poisson arrivals) from a seeded generator, so a reset replays exactly.
-export class Traffic {
-  constructor(cfg) {
-    this.cfg = cfg; // { capacity, refill, shared, clientCount, clients: [{ rate, pattern }] }
-    this.limiter = new TokenBucketLimiter();
-    this.now = 0n;
-    this.onDecision = () => {};
-    this.clients = cfg.clients.map((c, i) => ({ ...c, i, rng: mulberry32(42 + i), next: null }));
-    this.clients.forEach((c) => this.reschedule(c));
-  }
-  key(i) { return this.cfg.shared ? 'global' : `user:${i + 1}`; }
-  limit() { return { capacity: this.cfg.capacity, refill_per_sec: this.cfg.refill }; }
-  gap(c) {
-    if (!(c.rate > 0)) return null;
-    const s = c.pattern === 'random' ? -Math.log(1 - c.rng()) / c.rate : 1 / c.rate;
-    return BigInt(Math.max(1, Math.round(s * 1e9)));
-  }
-  reschedule(c) { const g = this.gap(c); c.next = g === null ? null : this.now + g; }
-  call(key, lane, t = this.now) {
-    const d = this.limiter.allow(key, this.limit(), t);
-    this.onDecision({ t, key, lane, ...d });
-    return d;
-  }
-  // Runs every arrival due at or before t, in time order, then moves the clock to t.
-  advanceTo(t) {
-    for (;;) {
-      let c = null;
-      for (let i = 0; i < this.cfg.clientCount; i++) {
-        const x = this.clients[i];
-        if (x.next !== null && x.next <= t && (!c || x.next < c.next)) c = x;
-      }
-      if (!c) break;
-      this.call(this.key(c.i), c.i, c.next);
-      const g = this.gap(c);
-      c.next = g === null ? null : c.next + g;
-    }
-    this.now = t;
-  }
-}
-
-const TIMELINE_LABEL = 'Decisions · last 10 s'; // claim-waiver: window of the playground timeline on its simulated clock, not a measurement
-const THROUGHPUT_LABEL = 'Throughput · per second, last 30 s'; // claim-waiver: window of the playground throughput chart on its simulated clock, not a measurement
-const TABLE_CAPTION = 'Requests per second, last 10 seconds'; // claim-waiver: window of the playground table on its simulated clock, not a measurement
-const TEMPLATE = (cfg) => `
+const TIMELINE_LABEL = 'Decisions · last 10 s of virtual time'; // claim-waiver: window of the playground timeline on the playground's virtual clock, not a measurement
+const THROUGHPUT_LABEL = 'Throughput · per virtual second, last 30 s'; // claim-waiver: window of the playground throughput chart on the playground's virtual clock, not a measurement
+const TABLE_CAPTION = 'Requests per virtual second, last 10 seconds'; // claim-waiver: window of the playground table on the playground's virtual clock, not a measurement
+const TEMPLATE = (cfg, seed) => `
 <div class="demo-rl">
   <div class="demo-card demo-rl-controls">
     <fieldset class="demo-group"><legend class="demo-legend">Limit</legend>
@@ -83,15 +37,20 @@ const TEMPLATE = (cfg) => `
     <fieldset class="demo-group"><legend class="demo-legend">Run</legend>
       <div class="demo-seg" role="group" aria-label="Run length">${RUNS.map(([s, l]) => `<button type="button" data-run="${s}" aria-pressed="${s === 30}">${l}</button>`).join('')}</div>
       <div class="demo-seg" role="group" aria-label="Speed">${SPEEDS.map((s) => `<button type="button" data-speed="${s}" aria-pressed="${s === 1}">${s}×</button>`).join('')}</div>
+      <div class="demo-row demo-rl-seed">
+        <label class="demo-field"><span class="demo-small">Seed</span><input class="demo-input demo-seed" data-seed inputmode="numeric" autocomplete="off" spellcheck="false" value="${seed}"></label>
+        <button type="button" class="project-link" data-new-seed>New seed</button>
+      </div>
     </fieldset>
     <div class="demo-row">
       <button type="button" class="project-link-accent" data-toggle>Start</button>
       <button type="button" class="project-link" data-burst>Send burst</button>
+      <button type="button" class="project-link" data-replay>Replay</button>
     </div>
   </div>
   <div class="demo-rl-viz">
     <div class="demo-buckets" data-buckets></div>
-    <p class="pd-caption">The library refills lazily, only when <code>allow()</code> is called; the level shown between calls is computed for display. Click a bucket to send one request.</p>
+    <p class="pd-caption">Each bucket is read with the library's inspection API (<code>rl_inspect_at</code>) at the current virtual instant; reading changes nothing. Click a bucket to send one request.</p>
     <div class="demo-card">
       <p class="demo-label" id="rl-tl">${TIMELINE_LABEL}</p>
       <canvas class="demo-canvas" height="120" data-timeline role="img" aria-labelledby="rl-tl" aria-describedby="rl-table"></canvas>
@@ -111,30 +70,106 @@ const TEMPLATE = (cfg) => `
   </div>
 </div>`;
 
+// mount() stays synchronous (the host expects { pause, resume, destroy } at once): it shows a skeleton, loads the
+// module, then builds the playground. A failed load or a WebAssembly abort shows the error block, whose Retry loads a
+// fresh module instance (D-13). There is no JavaScript decision path to fall back to.
 export function mount(root, { status }) {
   const mountEl = root.querySelector('.demo-mount');
+  let alive = true, hostPaused = false, api = null, loadGen = 0, attempt = 0;
+  const q = (s) => mountEl.querySelector(s);
+  const showError = (refocus) => {
+    mountEl.innerHTML = LOAD_ERROR;
+    status('Couldn’t load this demo. Press Retry to load it again.');
+    if (refocus) q('[data-retry]').focus();
+  };
+  async function load() {
+    const g = ++loadGen, refocus = mountEl.contains(document.activeElement); // keep keyboard focus in the demo across a Retry
+    mountEl.innerHTML = SKELETON;
+    status('Loading the rate limiter (WebAssembly)…');
+    try {
+      const module = await loadLimiterModule({ attempt });
+      if (!alive || g !== loadGen) return; // closed, or superseded by a later Retry: the late module builds nothing
+      api = playground(root, mountEl, module, { status, paused: hostPaused, onAbort });
+      if (refocus) q('[data-toggle]').focus();
+    } catch (err) {
+      if (!alive || g !== loadGen) return; // a stale attempt's failure is not this demo's state any more
+      console.error(err);
+      api = null; showError(refocus);
+    }
+  }
+  function onAbort() { const refocus = mountEl.contains(document.activeElement); api = null; showError(refocus); }
+  const onRetry = (e) => { if (alive && e.target.closest('[data-retry]')) { attempt++; load(); } };
+  mountEl.addEventListener('click', onRetry);
+  load();
+  return {
+    pause() { hostPaused = true; api?.pause(); },
+    resume() { hostPaused = false; api?.resume(); },
+    destroy() {
+      alive = false; loadGen++;
+      mountEl.removeEventListener('click', onRetry);
+      api?.destroy(); api = null;
+      mountEl.replaceChildren();
+    },
+  };
+}
+
+function playground(root, mountEl, module, { status, paused, onAbort }) {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const cfg = { capacity: 10, refill: 5, shared: false, clientCount: 2, clients: DEFAULT_RATES.map((rate) => ({ rate, pattern: 'steady' })) };
-  let runS = 30, speed = 1, mode = 'idle', hostPaused = false, raf = 0, lastFrame = 0, lastDraw = 0, lastAnnounce = 0;
-  let T, ev, bins, counts, last, log, logDirty, flashes;
-  mountEl.innerHTML = TEMPLATE(cfg);
+  let seed = randomSeed();
+  // cfg is the run's own config (run.config); the controls change it only through run.apply config events.
+  let cfg = { capacity: 10, refill: 5, shared: false, clientCount: 2, clients: DEFAULT_RATES.map((rate) => ({ rate, pattern: 'steady' })) };
+  let run = null, runS = 30, speed = 1, mode = 'idle', hostPaused = paused, raf = 0, lastFrame = 0, lastDraw = 0, lastAnnounce = 0;
+  let ev, bins, counts, last, log, logDirty, flashes, tableSec = null, countersHtml = '', shownCfg = '';
+  const newRun = () => {
+    const r = new Run({ seed, config: cfg, createLimiter: () => new Limiter(module) });
+    run?.free();
+    run = r; cfg = run.config; run.onDecision = record;
+  };
+  newRun(); // before any DOM or listener, so a failure here leaves nothing behind
+  mountEl.innerHTML = TEMPLATE(cfg, seed);
   const q = (s) => mountEl.querySelector(s);
   const el = {
     toggle: q('[data-toggle]'), buckets: q('[data-buckets]'), timeline: q('[data-timeline]'), throughput: q('[data-throughput]'),
     counters: q('[data-counters]'), log: q('[data-log]'), table: q('[data-table]'), limitLabel: q('[data-limit-label]'), rows: q('[data-client-rows]'),
+    seed: q('[data-seed]'),
   };
   const css = getComputedStyle(root), C = Object.fromEntries(['accent', 'signal-bad', 'text', 'muted', 'border', 'border-strong', 'bg'].map((n) => [n, css.getPropertyValue(`--${n}`).trim()]));
   const runNs = () => (runS ? BigInt(runS) * 1_000_000_000n : null);
   const sec = (t) => Number(t) / 1e9;
-  const keys = () => (cfg.shared ? ['global'] : Array.from({ length: cfg.clientCount }, (_, i) => `user:${i + 1}`));
+  const keys = () => run.keys();
+  const configure = (patch) => run.apply({ kind: 'config', patch });
 
-  function reset() {
-    T = new Traffic(cfg);
-    T.onDecision = record;
+  // ---------- Failure (owner decision 2026-11-12: a WebAssembly trap or abort kills the module) ----------
+  // Every engine call (advanceTo, apply, inspect, replay, trackedCount) runs inside guard(), from the frame loop or a
+  // control handler. A throw stops the loop, drops the run and shows the error block; Retry instantiates a fresh module.
+  const listeners = new AbortController();
+  const on = (target, type, fn) => target.addEventListener(type, (e) => guard(() => fn(e)), { signal: listeners.signal });
+  function guard(fn) {
+    if (!run) return;
+    try { return fn(); } catch (err) {
+      console.error(err);
+      teardown(true); onAbort();
+    }
+  }
+  function teardown(dead) {
+    stop(); listeners.abort();
+    try { run?.free(); } catch (err) {
+      // A trapped or aborted module can throw again on free; its memory goes with the dropped instance.
+      if (!dead) console.error(err);
+    }
+    run = null;
+  }
+
+  // Everything drawn is rebuilt only from run.onDecision, so a replay redraws exactly what the original run drew.
+  function resetView() {
     ev = { t: new Float64Array(CAP), lane: new Uint8Array(CAP), ok: new Uint8Array(CAP), n: 0 };
-    bins = new Map(); counts = { offered: 0, ok: 0, no: 0 }; last = new Map(); log = []; logDirty = true; flashes = new Map();
+    bins = new Map(); counts = { offered: 0, ok: 0, no: 0 }; last = new Map(); log = []; logDirty = true; flashes = new Map(); tableSec = null;
     el.table.replaceChildren();
     renderBuckets(true);
+  }
+  function reset(fresh = true) {
+    if (fresh) newRun();
+    resetView();
   }
   function record(d) {
     const i = ev.n % CAP, s = sec(d.t);
@@ -146,35 +181,43 @@ export function mount(root, { status }) {
     last.set(d.key, d);
     log.unshift(d); if (log.length > 40) log.length = 40;
     logDirty = true;
-    const f = flashes.get(d.key), now = performance.now();
+    const f = flashes.get(d.key), now = performance.now(); // browser clock: flash timing only
     if (!reduced && (!f || now - f.start >= 333)) flashes.set(d.key, { start: now, ok: d.allowed, until: now + (d.allowed ? 200 : 300) });
   }
 
   // ---------- Rendering ----------
   let bucketEls = new Map();
+  const span = (className) => Object.assign(document.createElement('span'), { className });
+  const wait = (ns) => (ns === 0n ? 'now' : ns === RL_NEVER ? 'never' : formatWait(ns));
   function renderBuckets(rebuild = false) {
     const ks = keys();
     if (rebuild || ks.join() !== [...bucketEls.keys()].join()) {
       bucketEls = new Map(ks.map((k) => {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'demo-bucket'; b.dataset.key = k;
-        b.innerHTML = '<span class="demo-tube"><span class="demo-tube-fill"></span></span><span class="demo-bk-key"></span><span class="demo-bk-level"></span><span class="demo-bk-note"></span>';
-        b.querySelector('.demo-bk-key').textContent = k;
-        return [k, { b, fill: b.querySelector('.demo-tube-fill'), tube: b.querySelector('.demo-tube'), level: b.querySelector('.demo-bk-level'), note: b.querySelector('.demo-bk-note'), whole: -1 }];
+        const x = { b, tube: span('demo-tube'), fill: span('demo-tube-fill'), key: span('demo-bk-key'), level: span('demo-bk-level'),
+          exact: span('demo-bk-exact'), waits: span('demo-bk-waits'), note: span('demo-bk-note'), label: '' };
+        x.tube.append(x.fill); x.key.textContent = k;
+        b.append(x.tube, x.key, x.level, x.exact, x.waits, x.note);
+        return [k, x];
       }));
       el.buckets.replaceChildren(...[...bucketEls.values()].map((x) => x.b));
     }
-    const lim = T.limit(), now = performance.now();
+    const now = performance.now(); // browser clock: flash timing only
     for (const [k, x] of bucketEls) {
-      const lvl = T.limiter.peek(k, lim, T.now), d = last.get(k);
-      x.tube.style.setProperty('--lvl', `${(lvl / cfg.capacity) * 100}%`);
+      // Every readout is an rl_inspect_at field at the current virtual instant (inspection changes nothing).
+      const s = run.inspect(k), d = last.get(k);
+      // Display geometry only: the tube height is the library's nanotokens over capacity.
+      const pct = cfg.capacity ? (Number(s.nanotokens) / Number(BigInt(cfg.capacity) * 1_000_000_000n)) * 100 : 0;
+      x.tube.style.setProperty('--lvl', `${pct}%`);
       x.tube.style.setProperty('--n', String(cfg.capacity <= 20 ? cfg.capacity : cfg.capacity / 5));
-      x.level.textContent = `${lvl.toFixed(2)} / ${cfg.capacity}`;
-      x.note.textContent = !T.limiter.keys.has(k) ? 'new key: starts full'
-        : lvl < 1 ? (cfg.refill === 0 ? 'never refills (rate 0)' : `next token in ${Math.ceil(((1 - lvl) * 1000) / cfg.refill)} ms`)
-        : d ? `{ allowed: ${d.allowed}, remaining: ${d.remaining}, reset_ms: ${d.reset_ms} }` : '';
-      const whole = Math.floor(lvl + 1e-9);
-      if (whole !== x.whole) { x.whole = whole; x.b.setAttribute('aria-label', `${k}, ${whole} of ${cfg.capacity} tokens. Send one request.`); }
+      x.level.textContent = `${s.tokens} / ${cfg.capacity}`;
+      x.exact.textContent = `${formatTokens(s.nanotokens)} tokens`;
+      x.waits.textContent = `next token: ${wait(s.until_token_ns)}\nfull: ${wait(s.until_full_ns)}`;
+      x.note.textContent = !s.tracked ? 'new key: starts full'
+        : d ? `{ allowed: ${d.allowed}, remaining: ${String(d.remaining)}, reset_ms: ${String(d.reset_ms)} }` : '';
+      const label = `${k}, ${s.tokens} of ${cfg.capacity} tokens. Send one request.`;
+      if (label !== x.label) { x.label = label; x.b.setAttribute('aria-label', label); }
       const f = flashes.get(k), on = f && now < f.until;
       x.b.classList.toggle('is-ok', !!on && f.ok);
       x.b.classList.toggle('is-no', !!on && !f.ok);
@@ -191,7 +234,7 @@ export function mount(root, { status }) {
     return [g, w, h];
   }
   function drawTimeline() {
-    const [g, w, h] = canvas2d(el.timeline), now = sec(T.now), lanes = cfg.clientCount, axis = 16, lh = (h - axis) / lanes;
+    const [g, w, h] = canvas2d(el.timeline), now = sec(run.now), lanes = cfg.clientCount, axis = 16, lh = (h - axis) / lanes;
     g.fillStyle = C.muted; g.textBaseline = 'alphabetic';
     for (let l = 0; l < lanes; l++) {
       const y = Math.round(lh * l + lh / 2) + 0.5;
@@ -212,7 +255,7 @@ export function mount(root, { status }) {
   }
   let hatch = null;
   function drawThroughput() {
-    const [g, w, h] = canvas2d(el.throughput), cur = Math.floor(sec(T.now)), top = 14, bottom = h - 16;
+    const [g, w, h] = canvas2d(el.throughput), cur = Math.floor(sec(run.now)), top = 14, bottom = h - 16;
     const limit = cfg.refill * (cfg.shared ? 1 : cfg.clientCount);
     let max = Math.max(1, limit);
     for (let s = cur - 29; s <= cur; s++) { const b = bins.get(s); if (b) max = Math.max(max, b[0] + b[1]); }
@@ -240,20 +283,24 @@ export function mount(root, { status }) {
     g.textAlign = 'left'; g.fillText('-30s', 0, h - 3); g.textAlign = 'right'; g.fillText('now', w, h - 3); g.textAlign = 'left'; // claim-waiver: axis labels on the playground simulated clock, not measurements
     el.limitLabel.textContent = cfg.shared ? `limit ${limit}/s (one shared key)` : `limit ${limit}/s (${cfg.refill}/s × ${cfg.clientCount} key${cfg.clientCount > 1 ? 's' : ''})`;
   }
-  let tableSec = null, countersHtml = '';
   function renderText() {
     const pct = counts.offered ? ((counts.ok / counts.offered) * 100).toFixed(1) + '%' : '–';
-    const items = [['Offered', counts.offered], ['Accepted', counts.ok], ['Rejected', counts.no], ['Acceptance', pct], ['Keys tracked', T.limiter.size()]];
+    const items = [['Offered', counts.offered], ['Accepted', counts.ok], ['Rejected', counts.no], ['Acceptance', pct], ['Keys tracked', run.trackedCount()],
+      ['Virtual time', `${sec(run.now).toFixed(1)} s`]];
     const html = items.map(([k, v]) => `<div><dt class="demo-label">${k}</dt><dd class="demo-num">${v}</dd></div>`).join('');
     if (countersHtml !== html) el.counters.innerHTML = countersHtml = html;
     if (logDirty) {
       logDirty = false;
-      el.log.replaceChildren(...log.map((d) => Object.assign(document.createElement('li'), {
-        className: d.allowed ? 'is-ok' : 'is-no',
-        textContent: `t=${sec(d.t).toFixed(3)}s  ${d.key} -> allowed=${d.allowed ? 'yes' : 'no'} remaining=${d.remaining} reset_ms=${d.reset_ms}`,
-      })));
+      el.log.replaceChildren(...log.map((d) => {
+        const li = Object.assign(document.createElement('li'), {
+          className: d.allowed ? 'is-ok' : 'is-no',
+          textContent: `t=${sec(d.t).toFixed(3)}s  ${d.key} -> allowed=${d.allowed ? 'yes' : 'no'} remaining=${String(d.remaining)} reset_ms=${String(d.reset_ms)}`,
+        });
+        li.append(Object.assign(span('demo-src'), { textContent: d.source })); // 'synthetic' or 'you'
+        return li;
+      }));
     }
-    const cur = Math.floor(sec(T.now));
+    const cur = Math.floor(sec(run.now));
     if (cur !== tableSec) {
       tableSec = cur;
       const rows = [];
@@ -262,26 +309,46 @@ export function mount(root, { status }) {
     }
   }
   function draw(force = false) {
-    const now = performance.now();
+    const now = performance.now(); // browser clock: draw throttling only
     if (!force && reduced && now - lastDraw < 250) return;
     lastDraw = now;
-    renderBuckets(); drawTimeline(); drawThroughput(); renderText();
+    renderBuckets(); drawTimeline(); drawThroughput(); renderText(); syncControls();
+  }
+  // The controls show the run's config. A replay rewinds it to the initial config and re-applies the logged config
+  // events at their virtual times, so the controls follow the run, not the other way round.
+  function syncControls() {
+    const sig = JSON.stringify(cfg);
+    if (sig === shownCfg) return;
+    shownCfg = sig;
+    setSlider(q('[data-in="capacity"]'), cfg.capacity, q('[data-out="capacity"]'), String(cfg.capacity), `${cfg.capacity} tokens`);
+    setSlider(q('[data-in="refill"]'), cfg.refill, q('[data-out="refill"]'), `${cfg.refill} tokens/s`, `${cfg.refill} tokens per second`);
+    cfg.clients.forEach((c, i) => {
+      setSlider(q(`[data-rate="${i}"]`), c.rate, q(`[data-out="rate${i}"]`), `${c.rate} req/s`, `${c.rate} requests per second`);
+      q(`[data-pattern="${i}"]`).value = c.pattern;
+    });
+    mountEl.querySelectorAll('[data-clients]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.clients === cfg.clientCount)));
+    mountEl.querySelectorAll('[name="rl-keys"]').forEach((r) => { r.checked = (r.value === 'shared') === cfg.shared; });
+    syncClientRows();
+  }
+  function setSlider(t, v, out, text, valuetext) {
+    if (t.valueAsNumber !== v) t.value = String(v); // never rewrite a slider the visitor is dragging to the same value
+    out.textContent = text; t.setAttribute('aria-valuetext', valuetext);
   }
 
   // ---------- Clock ----------
-  function frame(ts) {
-    raf = 0;
+  function frame(ts) { raf = 0; guard(() => step(ts)); }
+  function step(ts) {
     const dt = Math.min(lastFrame ? ts - lastFrame : 16, 100) * speed;
     lastFrame = ts;
-    let target = T.now + BigInt(Math.round(dt * 1e6));
+    let target = run.now + BigInt(Math.round(dt * 1e6));
     const end = runNs();
-    if (end !== null && target >= end) target = end > T.now ? end : T.now; // a shortened run never moves the clock back
-    T.advanceTo(target);
-    if (end !== null && T.now >= end) {
+    if (end !== null && target >= end) target = end > run.now ? end : run.now; // a shortened run never moves the clock back
+    run.advanceTo(target);
+    if (end !== null && run.now >= end) {
       mode = 'finished'; syncToggle(); draw(true);
-      return status(`${runS} s simulated: ${counts.ok} accepted, ${counts.no} rejected.`);
+      return status(`${runS} s of virtual time: ${counts.ok} accepted, ${counts.no} rejected.`);
     }
-    if (ts - lastAnnounce >= 5000) { lastAnnounce = ts; status(`t=${Math.floor(sec(T.now))} s: ${counts.ok} accepted, ${counts.no} rejected.`); }
+    if (ts - lastAnnounce >= 5000) { lastAnnounce = ts; status(`t=${Math.floor(sec(run.now))} s (virtual time): ${counts.ok} accepted, ${counts.no} rejected.`); }
     draw();
     loop();
   }
@@ -294,76 +361,92 @@ export function mount(root, { status }) {
   function start() {
     if (mode === 'finished') { reset(); }
     mode = 'running'; lastAnnounce = performance.now(); syncToggle(); loop();
-    status(`Running: ${cfg.clientCount} client${cfg.clientCount > 1 ? 's' : ''}, capacity ${cfg.capacity}, refill ${cfg.refill}/s${runS ? `, ${runS} s` : ''}.`);
+    status(`Running: ${cfg.clientCount} client${cfg.clientCount > 1 ? 's' : ''}, capacity ${cfg.capacity}, refill ${cfg.refill}/s${runS ? `, ${runS} s of virtual time` : ''}.`);
   }
-  function pause() { mode = 'paused'; stop(); syncToggle(); draw(true); status(`Paused at t=${sec(T.now).toFixed(1)} s.`); }
+  function pause() { mode = 'paused'; stop(); syncToggle(); draw(true); status(`Paused at t=${sec(run.now).toFixed(1)} s (virtual time).`); }
+  function newSession(msg) { stop(); mode = 'idle'; reset(); syncToggle(); draw(true); status(msg); }
 
-  // ---------- Controls ----------
+  // ---------- Seed and replay (D-10; pause and speed are UI-only and never enter the event log) ----------
+  function setSeed(s) {
+    seed = s; el.seed.value = String(s); el.seed.removeAttribute('aria-invalid');
+    newSession(`Seed ${seed}. Press Start or Replay.`);
+  }
+  function replay() {
+    stop(); run.replay(); cfg = run.config; resetView();
+    mode = reduced ? 'idle' : 'running'; lastAnnounce = performance.now(); // browser clock: status throttling only
+    syncToggle(); draw(true); loop();
+    status(`Replaying seed ${seed} from virtual time 0 with ${run.events.length} recorded input(s).${reduced ? ' Press Start to play it.' : ''}`);
+  }
+
+  // ---------- Controls (every change is a config event of the run) ----------
   const setPressed = (sel, btn) => mountEl.querySelectorAll(sel).forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
   function syncClientRows() {
     el.rows.querySelectorAll('[data-client]').forEach((r) => { r.hidden = +r.dataset.client >= cfg.clientCount; });
   }
-  mountEl.addEventListener('input', (e) => {
+  on(mountEl, 'input', (e) => {
     const t = e.target;
-    if (t.dataset.in) {
-      cfg[t.dataset.in] = t.valueAsNumber;
-      q(`[data-out="${t.dataset.in}"]`).textContent = t.dataset.in === 'refill' ? `${t.value} tokens/s` : t.value;
-      t.setAttribute('aria-valuetext', t.dataset.in === 'refill' ? `${t.value} tokens per second` : `${t.value} tokens`);
-    } else if (t.dataset.rate) {
-      const c = T.clients[+t.dataset.rate];
-      cfg.clients[c.i].rate = c.rate = t.valueAsNumber;
-      T.reschedule(c);
-      q(`[data-out="rate${c.i}"]`).textContent = `${t.value} req/s`;
-      t.setAttribute('aria-valuetext', `${t.value} requests per second`);
+    if (t.matches('[data-seed]')) return t.removeAttribute('aria-invalid'); // the visitor is correcting the entry
+    if (t.dataset.in) configure({ [t.dataset.in]: t.valueAsNumber });
+    else if (t.dataset.rate) configure({ client: +t.dataset.rate, rate: t.valueAsNumber });
+    draw(true); // syncControls() writes the outputs and aria-valuetext from the run's config
+  });
+  on(mountEl, 'change', (e) => {
+    const t = e.target;
+    if (t.matches('[data-seed]')) {
+      const s = parseSeed(t.value.trim());
+      if (s !== null) return setSeed(s);
+      t.setAttribute('aria-invalid', 'true'); t.value = String(seed); // the run is left unchanged
+      return status('Seed must be a whole number from 0 to 4294967295.');
     }
-    draw(true);
+    if (t.dataset.pattern) configure({ client: +t.dataset.pattern, pattern: t.value });
+    else if (t.name === 'rl-keys') {
+      configure({ shared: t.value === 'shared' });
+      status(cfg.shared ? 'All clients now share the key global.' : 'Each client now has its own key.'); draw(true);
+    }
   });
-  mountEl.addEventListener('change', (e) => {
-    const t = e.target;
-    if (t.dataset.pattern) { const c = T.clients[+t.dataset.pattern]; cfg.clients[c.i].pattern = c.pattern = t.value; T.reschedule(c); }
-    else if (t.name === 'rl-keys') { cfg.shared = t.value === 'shared'; status(cfg.shared ? 'All clients now share the key global.' : 'Each client now has its own key.'); draw(true); }
-  });
-  mountEl.addEventListener('click', (e) => {
+  on(mountEl, 'click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.clients) {
-      const n = +b.dataset.clients;
-      for (let i = cfg.clientCount; i < n; i++) T.reschedule(T.clients[i]); // newly active clients start from now
-      cfg.clientCount = n; setPressed('[data-clients]', b); syncClientRows(); draw(true);
+      configure({ clientCount: +b.dataset.clients }); // newly active clients start from now
+      draw(true);
     } else if (b.dataset.run != null) {
       runS = +b.dataset.run; setPressed('[data-run]', b);
-      if (mode === 'finished' && (!runS || T.now < runNs())) { mode = 'paused'; syncToggle(); }
+      if (mode === 'finished' && (!runS || run.now < runNs())) { mode = 'paused'; syncToggle(); }
     } else if (b.dataset.speed) {
       speed = +b.dataset.speed; setPressed('[data-speed]', b);
     } else if (b.matches('[data-toggle]')) {
       mode === 'running' ? pause() : start();
+    } else if (b.matches('[data-replay]')) {
+      replay();
+    } else if (b.matches('[data-new-seed]')) {
+      setSeed(randomSeed());
     } else if (b.matches('[data-burst]')) {
       const key = keys()[0], n = cfg.capacity + 5;
-      let ok = 0;
-      for (let i = 0; i < n; i++) ok += T.call(key, 0).allowed;
+      const ok = run.apply({ kind: 'burst', key, lane: 0, n }).filter((d) => d.allowed).length;
       draw(true);
-      status(`Burst of ${n} to ${key} at t=${sec(T.now).toFixed(3)} s: ${ok} allowed, ${n - ok} denied.`);
-    } else if (b.dataset.key) {
-      const d = T.call(b.dataset.key, cfg.shared ? 0 : keys().indexOf(b.dataset.key));
+      status(`Burst of ${n} to ${key} at t=${sec(run.now).toFixed(3)} s (virtual time): ${ok} allowed, ${n - ok} denied.`);
+    } else if (b.dataset.key && ALL_KEYS.includes(b.dataset.key)) {
+      const d = run.apply({ kind: 'click', key: b.dataset.key, lane: cfg.shared ? 0 : keys().indexOf(b.dataset.key) })[0];
       draw(true);
-      status(`${b.dataset.key}: ${d.allowed ? `allowed, ${d.remaining} remaining` : d.reset_ms ? `denied, next token in ${d.reset_ms} ms` : 'denied, never refills'}.`);
+      // ratelimit_c.h: a denied decision reports reset_ms 0 instead of RL_NEVER when no token will ever come.
+      status(`${b.dataset.key}: ${d.allowed ? `allowed, ${String(d.remaining)} remaining` : d.reset_ms ? `denied, next token in ${String(d.reset_ms)} ms` : 'denied, never refills'}.`);
     }
   });
-  const resetBtn = root.querySelector('.demo-status .btn-ghost'), onReset = () => {
-    stop(); mode = 'idle'; reset(); syncToggle(); draw(true);
-    status('Reset. Press Start or click a bucket.');
-  };
-  resetBtn.addEventListener('click', onReset);
-  const onResize = () => draw(true);
-  addEventListener('resize', onResize);
+  // The Reset button and the window resize listener live outside mountEl; listeners.abort() removes them with the rest.
+  on(root.querySelector('.demo-status .btn-ghost'), 'click', () => newSession('Reset. Press Start or click a bucket.'));
+  on(window, 'resize', () => draw(true));
 
-  reset(); syncClientRows(); syncToggle(); draw(true);
+  try { reset(false); syncToggle(); draw(true); } catch (err) {
+    teardown(true); // load() logs the error and shows the error block
+    throw err;
+  }
   if (reduced) status('Press Start or click a bucket.');
-  else start();
+  else start(); // honors a host pause that arrived while the module was loading (hostPaused = paused)
 
   return {
     pause() { hostPaused = true; stop(); },
     resume() { hostPaused = false; loop(); },
-    destroy() { stop(); resetBtn.removeEventListener('click', onReset); removeEventListener('resize', onResize); mountEl.replaceChildren(); },
+    destroy() { teardown(false); mountEl.replaceChildren(); },
   };
 }

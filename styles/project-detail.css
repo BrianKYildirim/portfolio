@@ -1089,6 +1089,10 @@ input.demo-input {
   background: var(--accent);
 }
 
+.demo-pill-synthetic::before {
+  background: var(--signal-wait);
+}
+
 .fidelity {
   padding: .75rem .9rem;
 }
@@ -1688,6 +1692,54 @@ input.demo-input {
   min-height: 2.2em;
   font: .68rem/1.35 var(--mono);
   text-align: center;
+}
+
+.demo-bk-exact,
+.demo-bk-waits {
+  font: .68rem/1.35 var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* Seed field: wide enough for the ten digits of 4294967295 (the mono font's ch), aligned with its New seed button. */
+.demo-rl-seed {
+  align-items: end;
+}
+
+.demo-seed {
+  width: calc(10ch + 1.5rem + 2px);
+  font-variant-numeric: tabular-nums;
+}
+
+.demo-input[aria-invalid="true"] {
+  border-color: var(--signal-bad);
+}
+
+/* Two lines (next token, full), each kept whole so a wait never splits from its unit. */
+.demo-bk-waits {
+  white-space: pre;
+}
+
+/* The source tag comes last in each log row's DOM but leads it visually, so it stays in view when a long row
+   scrolls sideways; a fixed width keeps the decision text aligned across 'synthetic' and 'you'. */
+.demo-log li:has(.demo-src) {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.demo-src {
+  order: -1;
+  flex: none;
+  min-width: 11ch;
+  padding: 0 .4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: .85em;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted);
 }
 
 .demo-canvas {

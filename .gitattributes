@@ -3,3 +3,7 @@
 tools/test/fixtures/results/** -text
 # The CRLF README fixture must stay CRLF on every checkout (its test compares it with an LF twin).
 tools/test/fixtures/md/README.crlf.md -text
+# The rate limiter's WASM artifacts and the vendored parity fixtures are checked byte for byte against the
+# sha256 in scripts/demos/wasm/ratelimit.manifest.json, so core.autocrlf must never convert them.
+scripts/demos/wasm/** -text
+tools/test/fixtures/ratelimit-parity/** -text
