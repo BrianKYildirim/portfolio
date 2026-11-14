@@ -84,8 +84,9 @@ portfolio/
 │       ├── ratelimit-wasm.js
 │       ├── wasm/                   # Pinned WebAssembly build of ratelimit-cpp and its manifest
 │       ├── iqg.js
-│       ├── iqg-core.js
+│       ├── iqg-pyodide.js
 │       ├── iqg-worker.js
+│       ├── iqg-py/                 # Pinned image-quality-gate Python sources, wheels and their manifest
 │       ├── kv.js
 │       └── kv-core.js
 ├── styles/

@@ -2,10 +2,10 @@
  "schema": "pyodide-manifest/1",
  "name": "iqg",
  "repo": "image-quality-gate",
- "sha": "f5bcf02b8167eb13c5de30537b228c6654c60bc0",
+ "sha": "e7fcab76ab094ecfb6f784fdbc6767164a6ec563",
  "source": {
-  "tree_url": "https://github.com/BrianKYildirim/image-quality-gate/tree/f5bcf02b8167eb13c5de30537b228c6654c60bc0",
-  "entry": "app/services/preprocess.py"
+  "tree_url": "https://github.com/BrianKYildirim/image-quality-gate/tree/e7fcab76ab094ecfb6f784fdbc6767164a6ec563",
+  "entry": "app/services/pipeline.py"
  },
  "pyodide": {
   "version": "314.0.7",
@@ -132,18 +132,230 @@
     "bytes": 6075,
     "sha256": "2f33c317e4f0d084f1a97de30b53afe2fecbdac111e66e0e530b2301ecd1093e"
    },
+   "app/services/pipeline.py": {
+    "bytes": 6041,
+    "sha256": "9556762a76701b7bdf79c3615aa2e977be630852d7cf399387337ff499d20d0e"
+   },
    "app/services/preprocess.py": {
     "bytes": 4251,
     "sha256": "103633bfff0a81e02fd1f82c668caf729beefadfc92362e683ac4fa7758c88ad"
    },
    "app/services/quality.py": {
-    "bytes": 2607,
-    "sha256": "d1761b3af81e8a200ab08251e136e15a6073a96aeecda288016b26e96ffc4cf2"
+    "bytes": 2734,
+    "sha256": "67a49be41c906af425c96b2a34151b3868dec9ebe8382cb34c8e8bf95b7d7aa0"
    }
   }
  },
  "parity": {
   "bins": 64,
+  "dir": "tools/test/fixtures/iqg-parity",
+  "files": {
+   "cases.json": {
+    "bytes": 3722,
+    "sha256": "8076dbf791b4853cde7be1a6b3da0beaee13e662b2cec6bc0c1d586e6610cf0f"
+   },
+   "fixtures/blurry_small.jpg": {
+    "bytes": 3589,
+    "sha256": "6ca66d4bfc5543c24d77338d77f6db2754deeca53f3c2c442fb36ddaa9078098"
+   },
+   "fixtures/cmyk.jpg": {
+    "bytes": 143155,
+    "sha256": "78a1233f35b4c5b385e8eff127e454c104f577529c6681fdd2b731e4b78ea48a"
+   },
+   "fixtures/empty.jpg": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "fixtures/exif2.jpg": {
+    "bytes": 55335,
+    "sha256": "062c1accedb860ddcc59a47b9e922d2b0a50184eda640df347d875595c268081"
+   },
+   "fixtures/exif3.jpg": {
+    "bytes": 55335,
+    "sha256": "632dd67d55cd527078dedf15ff71bdd9fc39a0e65d0bad81161ed071fdb6e25e"
+   },
+   "fixtures/exif4.jpg": {
+    "bytes": 55335,
+    "sha256": "fc553399692fa3f344e858c2b0d40189142688b741f0d6bfb37cd5500be06073"
+   },
+   "fixtures/exif5.jpg": {
+    "bytes": 55335,
+    "sha256": "7b93891e2d5ff9693860fd5c732230364fcc221d92ba2e7ff2d1c4fc4d82d7c0"
+   },
+   "fixtures/exif6.jpg": {
+    "bytes": 55335,
+    "sha256": "23a14a4075c0af3bf0d85110eecf84ff16c9e07db4e28f0726bc9553eaca52cd"
+   },
+   "fixtures/exif7.jpg": {
+    "bytes": 55335,
+    "sha256": "e1e41be735fb60281774f171ed249d58934449b39d0ad83d044b42fc5f9d6211"
+   },
+   "fixtures/exif8.jpg": {
+    "bytes": 55335,
+    "sha256": "aa8dfb503812b01e551d71084ee7cd9f6b0bf833bbe232418129269f3cc82008"
+   },
+   "fixtures/gray_l.png": {
+    "bytes": 125444,
+    "sha256": "d60eb25454601d53182c18297bc6b54d5e973412d3e13230f1b02854373b6dc9"
+   },
+   "fixtures/near_threshold.png": {
+    "bytes": 314889,
+    "sha256": "36ab16b68c5874d633efddd1ca468c8dcd347dddb4388d4149f4e1df89ae4f5e"
+   },
+   "fixtures/one_pixel.png": {
+    "bytes": 67,
+    "sha256": "a1abfd410973b0111c215baa879b9edcd739e601659ba44168269767cc2e9108"
+   },
+   "fixtures/overlimit_header.png": {
+    "bytes": 82,
+    "sha256": "a8d3e30a5abdb7882cf4826e41704dfc58961a8628dd74dc924f42484917ed66"
+   },
+   "fixtures/palette_p.png": {
+    "bytes": 26845,
+    "sha256": "e9a0d8238e6a916a2518f197bc38e7d0e8114fe7b9e0d64baabc6e37409ce859"
+   },
+   "fixtures/photo_1600x1200.jpg": {
+    "bytes": 278661,
+    "sha256": "b5c844c366f9a09a2e93ca035a7f604049eaefb37ffef10db13a6537298f133b"
+   },
+   "fixtures/photo_4032x3024_exif6.jpg": {
+    "bytes": 1608635,
+    "sha256": "27ba4800499ea61f328cd20e7b1c258e97fe75e26ed4b17510ad41d040a4e9bc"
+   },
+   "fixtures/rgba.png": {
+    "bytes": 357960,
+    "sha256": "d7e84d81fa0778e61152c68b910a6d401e61450b47a8d13ee18cbc68c46ed3ee"
+   },
+   "fixtures/sharp_small.jpg": {
+    "bytes": 2294,
+    "sha256": "345cb35bd170123d6cf7f35d7c89aba9c97b471e06d83ac49c476f62c37875b7"
+   },
+   "fixtures/strivoimg1.jpg": {
+    "bytes": 419621,
+    "sha256": "04a53e985769217fc6db199736e0e06a31bf4b9b9aeac29039351d20d4eef6ad"
+   },
+   "fixtures/truncated.jpg": {
+    "bytes": 139330,
+    "sha256": "c82c53702dc50df9557391420da7a85714aac8a0855ebe7ba2e7156f11788f2f"
+   },
+   "fixtures/underexposed.png": {
+    "bytes": 581,
+    "sha256": "ccaccf5c9541500da683e8e3629272e22a478ae11749a34eab571399ae1b9c1d"
+   },
+   "golden/blurry_small.json": {
+    "bytes": 3805,
+    "sha256": "5f2c7bf71e28bf3878d11d34909ff18fb3a70599ab76b10c2c36669bd24745ff"
+   },
+   "golden/blurry_small_overrides.json": {
+    "bytes": 3795,
+    "sha256": "81c6fb14300d61bec95740ed678aa013a276a62310e773044c15330cfed50f32"
+   },
+   "golden/cmyk.json": {
+    "bytes": 4033,
+    "sha256": "0e6ee54106a06bc18eb624c1f84c62f987434faeec0962ff7b6297672ddfb9dd"
+   },
+   "golden/empty.json": {
+    "bytes": 106,
+    "sha256": "ed3a1aee5ce633ab121939d1204a72f5fee2e9b00d2feb82b88bbb92becf58b3"
+   },
+   "golden/exif2.json": {
+    "bytes": 3945,
+    "sha256": "4670770e1b4965f23bea3d90ebe1b17f6adbdca42dfbbd276617bbc5edc34e76"
+   },
+   "golden/exif3.json": {
+    "bytes": 3945,
+    "sha256": "e8e59b3eec3ceb1b1e773947f983e6942421eea322e739a9e1cf0a741baacc2e"
+   },
+   "golden/exif4.json": {
+    "bytes": 3945,
+    "sha256": "a1feafe97723608bc05407ba150b63b2f49d3b521d7d8d3a5b1c6528a21ad079"
+   },
+   "golden/exif5.json": {
+    "bytes": 3945,
+    "sha256": "5cca628dc03d91a1147f7f997301a5d65e535976df13ba391767cdb63db72aa8"
+   },
+   "golden/exif6.json": {
+    "bytes": 3945,
+    "sha256": "6cce2b1de4f65df800f4ce0c2940ff3adc7a3c6582b4a0110e377f690d782e54"
+   },
+   "golden/exif7.json": {
+    "bytes": 3945,
+    "sha256": "01e1ff829eb6039bf6c67cbeb1e754b5f048d9381dd83c5da57364f41535caac"
+   },
+   "golden/exif8.json": {
+    "bytes": 3945,
+    "sha256": "79e0e14b9424f45bb243017810061df14637caf1fa8cb652b911445b6286b8ba"
+   },
+   "golden/gray_l.json": {
+    "bytes": 3974,
+    "sha256": "688fb00e0b12e6ff2df42c85ff7560143a216b336ce79c6cfe7340cbca164c0d"
+   },
+   "golden/meta.json": {
+    "bytes": 3670,
+    "sha256": "b60382034a03d7158ade7f4cfdfd81953c5b9fa31255cc9010831afc53447ad3"
+   },
+   "golden/near_threshold.json": {
+    "bytes": 3846,
+    "sha256": "c330f983b5e97f6a99c5c7f5bdf8095a1ab861a676f5db3582d5b2ebee272ca7"
+   },
+   "golden/no_content_type.json": {
+    "bytes": 90,
+    "sha256": "1d873f976b8d0598c773c76946615474ae9ca8fa92432787c78c724de17d0142"
+   },
+   "golden/not_image.json": {
+    "bytes": 90,
+    "sha256": "1d873f976b8d0598c773c76946615474ae9ca8fa92432787c78c724de17d0142"
+   },
+   "golden/one_pixel.json": {
+    "bytes": 3659,
+    "sha256": "90d4917310d9b39c2ea3a873fe73ef16959f0fbfb2d368379d598991784d1b24"
+   },
+   "golden/overlimit_header.json": {
+    "bytes": 97,
+    "sha256": "5aa189895b6d15bcf010052af338eb4e8dead5858a52a4eb4cb0bb0e70f27ef9"
+   },
+   "golden/palette_p.json": {
+    "bytes": 4042,
+    "sha256": "d6ee83731064a90503dcaf23952cc255d80833b9ae1a24ec22cafa06ef6e0047"
+   },
+   "golden/photo_1600x1200.json": {
+    "bytes": 4078,
+    "sha256": "9176e5f150a95390c5f047980c81c02fa5f0331b554450bb2113e8e4bebd4f7b"
+   },
+   "golden/photo_4032x3024_exif6.json": {
+    "bytes": 3902,
+    "sha256": "536b0e0e343945a24b37f25e9e75221d7d9ebbe8ecc39bc1a43b261af1ba5899"
+   },
+   "golden/rgba.json": {
+    "bytes": 3949,
+    "sha256": "79d5667be14c3213b09287f19954a05dc004350848885d08e51cc675cccd7199"
+   },
+   "golden/sharp_small.json": {
+    "bytes": 3962,
+    "sha256": "3e1c3ce06d02684419f09ba16652cc1cf7b426e033faa912df44f8f63d483db0"
+   },
+   "golden/strivoimg1.json": {
+    "bytes": 3993,
+    "sha256": "ef7618fec73bd8b8cd89a9f97ea1aed4485466f430c32f1a269e9a1ba1ad9684"
+   },
+   "golden/too_large.json": {
+    "bytes": 82,
+    "sha256": "1223e274edab08315afce3fc62f6bc758ff69633615f65db3c5471755f4abb4f"
+   },
+   "golden/truncated.json": {
+    "bytes": 91,
+    "sha256": "bc9162bb013bdfce4636006d8065ecba1302be94acc84ad5cb2e42192f708a11"
+   },
+   "golden/underexposed.json": {
+    "bytes": 3904,
+    "sha256": "51f68eb43cada5195190bf09c9015ab1d82ad6ac7462d2c6121f272b42c2a1b4"
+   },
+   "tolerances.json": {
+    "bytes": 5005,
+    "sha256": "efcbff2fcb8681e0f478d2f655fa1a971640600587bfd4c3ce90970d07043df2"
+   }
+  },
+  "source_path": "tests/parity",
   "tolerances": {
    "blur_score": {
     "measured_max": 0.00420153578249101,
@@ -192,5 +404,37 @@
   "pydantic": "2.14.3",
   "pydantic_settings": "2.16.2",
   "python": "3.11.18"
+ },
+ "samples": {
+  "sharp": {
+   "label": "Sharp",
+   "path": "static/demo/iqg/sharp_small.jpg",
+   "content_type": "image/jpeg",
+   "case": "sharp_small"
+  },
+  "blurry": {
+   "label": "Blurry",
+   "path": "static/demo/iqg/blurry_small.jpg",
+   "content_type": "image/jpeg",
+   "case": "blurry_small"
+  },
+  "dark": {
+   "label": "Dark UI",
+   "path": "static/strivoimg1.jpg",
+   "content_type": "image/jpeg",
+   "case": "strivoimg1"
+  },
+  "under": {
+   "label": "Underexposed",
+   "path": "static/demo/iqg/underexposed.png",
+   "content_type": "image/png",
+   "case": "underexposed"
+  },
+  "near": {
+   "label": "Borderline",
+   "path": "static/demo/iqg/near_threshold.png",
+   "content_type": "image/png",
+   "case": "near_threshold"
+  }
  }
 }

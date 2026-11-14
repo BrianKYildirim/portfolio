@@ -7895,6 +7895,52 @@
       "source_sha": "a0834d44502febb6c68b9e8f6f6761377a7e1d6c"
     },
     {
+      "id": "iqg.parity.tolerance.blur_score",
+      "project": "image-quality-gate",
+      "kind": "design_fact",
+      "status": "approved",
+      "approved_by": "Brian Yildirim",
+      "approved_on": "2026-11-14",
+      "statement": "Parity tolerance for blur_score: the largest relative difference, as a fraction of the native value, allowed between the native service and the Pyodide build on the parity fixtures",
+      "unit": "fraction",
+      "value": 0.01,
+      "display": {
+        "value": [
+          "0.01"
+        ]
+      },
+      "evidence": {
+        "repo": "image-quality-gate",
+        "sha": "e7fcab76ab094ecfb6f784fdbc6767164a6ec563",
+        "path": "tests/parity/tolerances.json",
+        "pattern": "\"blur_score\": \\{[^}]*\"rel\": ([0-9.]+)"
+      },
+      "source_sha": "e7fcab76ab094ecfb6f784fdbc6767164a6ec563"
+    },
+    {
+      "id": "iqg.parity.tolerance.brightness",
+      "project": "image-quality-gate",
+      "kind": "design_fact",
+      "status": "approved",
+      "approved_by": "Brian Yildirim",
+      "approved_on": "2026-11-14",
+      "statement": "Parity tolerance for brightness: the largest absolute difference in mean gray level allowed between the native service and the Pyodide build on the parity fixtures",
+      "unit": "gray level",
+      "value": 0.01,
+      "display": {
+        "value": [
+          "0.01"
+        ]
+      },
+      "evidence": {
+        "repo": "image-quality-gate",
+        "sha": "e7fcab76ab094ecfb6f784fdbc6767164a6ec563",
+        "path": "tests/parity/tolerances.json",
+        "pattern": "\"brightness\": \\{[^}]*\"abs\": ([0-9.]+)"
+      },
+      "source_sha": "e7fcab76ab094ecfb6f784fdbc6767164a6ec563"
+    },
+    {
       "id": "kv.original.c1.cmd_per_s.ubuntu-wsl2",
       "project": "key-value-storage",
       "kind": "throughput",

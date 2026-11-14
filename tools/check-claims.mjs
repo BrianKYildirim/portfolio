@@ -1,6 +1,7 @@
 // tools/check-claims.mjs: checks the numbers shown in the portfolio and the upstream READMEs against
 // bench/claims.json and their evidence (CLAIM-01..06), checks that every pinned upstream commit is reachable from
-// its default branch (CLAIM-06), and validates benchmark results directories (BENCH-01..03). Node built-ins only
+// its default branch (CLAIM-06), checks the vendored WASM and Pyodide builds against their manifests and pinned
+// upstream commits (D-01, D-06), and validates benchmark results directories (BENCH-01..03). Node built-ins only
 // (D-16). Exit 0 = clean, 1 = findings, 2 = usage or I/O error.
 // Usage: node tools/check-claims.mjs [--root <dir>] [--claims <file>] [--only <checks>] [--project <repo>]
 //          [--local <dir> [--local-ref <ref>] | --evidence-root <dir>] [--readme-file <project>=<README.md> ...]
@@ -17,10 +18,10 @@ import path from 'node:path';
 import { MAX_INPUT_BYTES, loadClaims, validateClaims, locateClaims, checkComparison, extractTaggedLeaves, checkTagged,
   scanHtml, scanJsLines, scanMarkdown, checkTables, checkMethodology, applyTables, validateResultsDir, sortFindings,
   formatFinding, extractPins, checkPins, createSources, checkEvidence, fillValues, spliceClaims, extractWasmPins,
-  checkWasmManifests } from './claims-lib.mjs';
+  checkWasmManifests, extractPyodidePins, extractPyodideFacts, checkPyodideManifests } from './claims-lib.mjs';
 
 // The default run (no --only) runs every check listed here.
-const CHECKS = ['claims', 'html', 'js', 'readme', 'tables', 'methodology', 'evidence', 'pins', 'wasm'];
+const CHECKS = ['claims', 'html', 'js', 'readme', 'tables', 'methodology', 'evidence', 'pins', 'wasm', 'pyodide'];
 const README_CHECKS = ['readme', 'tables', 'methodology'];
 // The upstream READMEs read from a source (GitHub or --local): the three projects Phase 2 benchmarks. Another
 // repo's README is checked only when it is given with --readme-file.
@@ -205,6 +206,38 @@ async function checkWasm(root, scope, isReachable, { repos, project }) {
   const pins = [];
   for (const rel of await htmlFiles(root, scope)) pins.push(...extractWasmPins(await readFile(path.join(root, rel), 'utf8'), rel));
   const findings = await checkWasmManifests({ manifests, pins, repos, root, readFile, readdir, isReachable, project });
+  const repoOf = (mf) => { try { return JSON.parse(mf.text)?.repo; } catch { return undefined; } };
+  const counted = manifests.filter((mf) => project === undefined || typeof repoOf(mf) !== 'string' || repoOf(mf) === project);
+  return { findings, manifestCount: counted.length };
+}
+
+// D-01 / D-06: each scripts/demos/<dir>-py/<name>.manifest.json against the bytes it lists, the same files at the
+// pinned upstream commit (sources.readEvidence), the reachability of that commit, and the data-pyodide-pin and
+// data-pyodide-fact elements in the pages. A root without any scripts/demos/*-py/ directory has no manifests. With
+// --project, only that repo's manifests count (an unreadable manifest counts: it is reported whatever the scope).
+async function checkPyodide(root, scope, sources, { repos, project }) {
+  let dirs;
+  try {
+    dirs = (await readdir(path.join(root, 'scripts', 'demos'), { withFileTypes: true })).filter((d) => d.isDirectory() && d.name.endsWith('-py')).map((d) => d.name).sort();
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    dirs = [];
+  }
+  const manifests = [];
+  for (const d of dirs) {
+    for (const f of (await readdir(path.join(root, 'scripts', 'demos', d))).filter((n) => n.endsWith('.manifest.json')).sort()) {
+      const file = `scripts/demos/${d}/${f}`;
+      manifests.push({ name: f.slice(0, -'.manifest.json'.length), file, text: await readFile(path.join(root, file), 'utf8') });
+    }
+  }
+  const pins = [], facts = [];
+  for (const rel of await htmlFiles(root, scope)) {
+    const html = await readFile(path.join(root, rel), 'utf8');
+    pins.push(...extractPyodidePins(html, rel));
+    facts.push(...extractPyodideFacts(html, rel));
+  }
+  const findings = await checkPyodideManifests({ manifests, pins, facts, repos, root, readFile, readdir,
+    isReachable: sources.isReachable, readEvidence: sources.readEvidence, project });
   const repoOf = (mf) => { try { return JSON.parse(mf.text)?.repo; } catch { return undefined; } };
   const counted = manifests.filter((mf) => project === undefined || typeof repoOf(mf) !== 'string' || repoOf(mf) === project);
   return { findings, manifestCount: counted.length };
@@ -408,7 +441,7 @@ async function main() {
   const claimsById = new Map();
   for (const c of claims) if (c && typeof c.id === 'string' && !claimsById.has(c.id)) claimsById.set(c.id, c);
   const findings = [];
-  let leafCount = 0, pinCount = 0, wasmCount = null;
+  let leafCount = 0, pinCount = 0, wasmCount = null, pyodideCount = null;
   if (only.includes('claims')) findings.push(...checkClaimsFile(doc, text, claimsFile, claimsById));
   try {
     const scope = opt.project === undefined ? null : await projectScope(root, doc, opt.project);
@@ -434,6 +467,11 @@ async function main() {
       findings.push(...r.findings);
       wasmCount = r.manifestCount;
     }
+    if (only.includes('pyodide')) {
+      const r = await checkPyodide(root, scope, sources, { repos, project: opt.project });
+      findings.push(...r.findings);
+      pyodideCount = r.manifestCount;
+    }
   } catch (err) {
     report(`[check-claims] I/O error: ${err.message}`);
     return 2;
@@ -442,7 +480,7 @@ async function main() {
   for (const f of sortFindings(findings)) report(formatFinding(f));
   report(findings.length
     ? `[check-claims] ${findings.length} finding(s)`
-    : `[check-claims] ok (checks: ${only.join(', ')}; ${claims.length} claim(s), ${leafCount} tagged value(s), ${pinCount} pin(s)${wasmCount === null ? '' : `, ${wasmCount} wasm manifest(s)`})`);
+    : `[check-claims] ok (checks: ${only.join(', ')}; ${claims.length} claim(s), ${leafCount} tagged value(s), ${pinCount} pin(s)${wasmCount === null ? '' : `, ${wasmCount} wasm manifest(s)`}${pyodideCount === null ? '' : `, ${pyodideCount} pyodide manifest(s)`})`);
   return findings.length ? 1 : 0;
 }
 

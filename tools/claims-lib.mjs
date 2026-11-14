@@ -1696,12 +1696,13 @@ const manifestStem = (file) => String(file).replace(/\\/g, '/').split('/').pop()
 // A path that resolves inside root: the traversal guard behind safePath's rules (no "..", no leading "/", no "\").
 const inside = (root, abs) => { const r = path.relative(path.resolve(root), abs); return r !== '' && !r.startsWith('..') && !path.isAbsolute(r); };
 
-// Problems with a files map of { bytes, sha256 } entries; where names the map in messages.
-function entryProblems(files, where, okName) {
+// Problems with a files map of { bytes, sha256 } entries; where names the map in messages, and plain says whether
+// the keys are plain file names (otherwise repo-relative paths).
+function entryProblems(files, where, okName, plain = where === 'files') {
   if (!isObj(files) || !Object.keys(files).length) return [`${where} must list at least one file`];
   const out = [];
   for (const [k, e] of Object.entries(files)) {
-    if (!okName(k)) out.push(`${where} entry ${JSON.stringify(k)} is not ${where === 'files' ? 'a plain file name' : 'a repo-relative path (forward slashes, no "..", no leading "/")'}`);
+    if (!okName(k)) out.push(`${where} entry ${JSON.stringify(k)} is not ${plain ? 'a plain file name' : 'a repo-relative path (forward slashes, no "..", no leading "/")'}`);
     else if (!isObj(e) || !Number.isSafeInteger(e.bytes) || e.bytes < 0 || !SHA256_RE.test(String(e.sha256))) {
       out.push(`${where} entry ${JSON.stringify(k)} needs bytes (a non-negative integer) and sha256 (64 lowercase hex)`);
     }
@@ -1738,27 +1739,33 @@ export function parseWasmManifest(text, file, { repos = {} } = {}) {
 // extractWasmPins(html, file) -> [{ name, sha, tag, file, line }] for every element carrying data-wasm-pin.
 // Comments are blanked first, as in extractPins. sha is the trimmed text up to the closing tag.
 export function extractWasmPins(html, file = '') {
+  return extractPinsByAttr(html, file, 'data-wasm-pin');
+}
+
+// Every element carrying the pin attribute `name` -> [{ name, sha, tag, file, line }] (shared by the WASM and
+// Pyodide pins).
+function extractPinsByAttr(html, file, name) {
   const src = blankComments(String(html)), lineOf = lineIndex(src), out = [];
   for (const m of src.matchAll(WASM_PIN_TAG)) {
-    const name = attr(m[2], 'data-wasm-pin');
-    if (name === null) continue;
+    const value = attr(m[2], name);
+    if (value === null) continue;
     const tag = m[1].toLowerCase(), start = m.index + m[0].length, end = src.indexOf(`</${m[1]}`, start);
-    out.push({ name, sha: end < 0 ? '' : src.slice(start, end).trim(), tag, file, line: lineOf(m.index) });
+    out.push({ name: value, sha: end < 0 ? '' : src.slice(start, end).trim(), tag, file, line: lineOf(m.index) });
   }
   return out;
 }
 
-// The bytes and sha256 of one listed file against its manifest entry.
-async function hashFindings(readFile, abs, rel, entry, file, line) {
+// The bytes and sha256 of one listed file against its manifest entry; code names the check that reports it.
+async function hashFindings(readFile, abs, rel, entry, file, line, code = 'WASM_HASH') {
   let buf;
   try {
     buf = bytesOf(await readFile(abs));
   } catch (err) {
-    return [finding(file, line, 'WASM_HASH', `${rel} is listed but ${err?.code === 'ENOENT' ? 'missing on disk' : `unreadable (${err?.code ?? err?.message})`}`)];
+    return [finding(file, line, code, `${rel} is listed but ${err?.code === 'ENOENT' ? 'missing on disk' : `unreadable (${err?.code ?? err?.message})`}`)];
   }
   const sha = createHash('sha256').update(buf).digest('hex');
   if (sha === entry.sha256 && buf.length === entry.bytes) return [];
-  return [finding(file, line, 'WASM_HASH', `${rel}: on disk ${buf.length} bytes sha256 ${sha}, the manifest says ${entry.bytes} bytes sha256 ${entry.sha256}`)];
+  return [finding(file, line, code, `${rel}: on disk ${buf.length} bytes sha256 ${sha}, the manifest says ${entry.bytes} bytes sha256 ${entry.sha256}`)];
 }
 
 // Every file below rel (recursive) as repo-relative paths; a missing directory is empty (its listed files then fail
@@ -1827,6 +1834,328 @@ export async function checkWasmManifests({ manifests = [], pins = [], repos = {}
       const top = !f.slice(WASM_DIR.length + 1).includes('/');
       if (!(top && f.endsWith('.manifest.json')) && !listed.has(f)) out.push(finding(f, 1, 'WASM_UNLISTED', `${f} is not listed (and hashed) in any ${WASM_DIR}/*.manifest.json`));
     }
+  }
+  out.push(...await checkPins(reach, { isReachable }));
+  return sortFindings(out);
+}
+
+// ---------- Pyodide ----------
+// D-01 / D-06: a Pyodide demo ships upstream Python, vendored wheels and a vendored parity set, described by
+// scripts/demos/<dir>-py/<name>.manifest.json (schema pyodide-manifest/1). The check proves that every listed byte is
+// on disk as listed, that nothing unlisted sits beside it, that the vendored sources and parity JSON files are the
+// ones at the pinned upstream commit (read through readEvidence: GitHub at the sha, or git show in --local mode),
+// that the fixtures are the ones upstream's golden/meta.json names at that commit, that the commit is reachable, and
+// that the page pins it. Everything fails closed: unknown reachability or an upstream file that cannot be read is
+// COULD_NOT_VERIFY, never a pass. The CDN files (pyodide.files) are verified by the node --test parity leg (owner
+// answer P2=A), so this check makes no CDN request.
+export const PYODIDE_MANIFEST_SCHEMA = 'pyodide-manifest/1';
+const PYODIDE_VERSION = /^\d+\.\d+\.\d+$/;
+const PYODIDE_REQUIRED = Object.freeze(['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json']);
+const PARITY_REQUIRED = Object.freeze(['cases.json', 'golden/meta.json']);
+const WHEEL_PATH = /^wheels\/[A-Za-z0-9._+-]+\.whl$/;
+const FACT_VALUE = /^([a-z0-9][a-z0-9_-]*):([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)$/;
+const UTF8_BOM = [0xef, 0xbb, 0xbf];
+const posixDir = (file) => String(file).replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+const sha256Of = (buf) => createHash('sha256').update(buf).digest('hex');
+
+// Problems with parity.tolerances: each entry has exactly one bound (abs or rel, finite and non-negative), a
+// rationale, and a measured_max no larger than that bound (for rel, measured_max is itself a relative difference,
+// which is how the demo applies rel: |pyodide - native| <= rel * |native|).
+function toleranceProblems(tols) {
+  if (!isObj(tols) || !Object.keys(tols).length) return ['parity.tolerances must name at least one field'];
+  const out = [];
+  for (const [k, t] of Object.entries(tols)) {
+    const where = `parity.tolerances.${k}`;
+    if (!isObj(t)) { out.push(`${where} must be an object`); continue; }
+    const kinds = ['abs', 'rel'].filter((x) => Object.hasOwn(t, x));
+    if (kinds.length !== 1) out.push(`${where} needs exactly one of abs or rel`);
+    else if (!isNonNeg(t[kinds[0]])) out.push(`${where}.${kinds[0]} must be a finite non-negative number`);
+    else if (!isNonNeg(t.measured_max)) out.push(`${where}.measured_max must be a finite non-negative number`);
+    else if (t.measured_max > t[kinds[0]]) out.push(`${where}: measured_max ${t.measured_max} exceeds its ${kinds[0]} bound ${t[kinds[0]]}`);
+    if (!isStr(t.rationale)) out.push(`${where}.rationale must be a non-empty string`);
+  }
+  return out;
+}
+
+// parsePyodideManifest(text, file, { repos }) -> { manifest, findings }. manifest is null when anything is wrong (code
+// PYODIDE_MANIFEST, or INPUT_TOO_LARGE for an oversized text), so a manifest is either fully valid or not used.
+// file is the repo-relative path of the manifest: name must be its stem and sources.dir its directory.
+export function parsePyodideManifest(text, file, { repos = {} } = {}) {
+  const fail = (list) => ({ manifest: null, findings: list });
+  if (byteLength(String(text)) > MAX_INPUT_BYTES) return fail([finding(file, 1, 'INPUT_TOO_LARGE', `larger than ${MAX_INPUT_BYTES} bytes`)]);
+  let m;
+  try { m = JSON.parse(text); } catch (err) { return fail([finding(file, 1, 'PYODIDE_MANIFEST', `not valid JSON (${err.message})`)]); }
+  if (!isObj(m)) return fail([finding(file, 1, 'PYODIDE_MANIFEST', 'must be a JSON object')]);
+  const out = [], bad = (key, msg) => out.push(finding(file, keyLine(text, key), 'PYODIDE_MANIFEST', msg));
+  if (m.schema !== PYODIDE_MANIFEST_SCHEMA) bad('schema', `schema is ${JSON.stringify(m.schema)}, expected "${PYODIDE_MANIFEST_SCHEMA}"`);
+  const stem = manifestStem(file), dir = posixDir(file);
+  if (typeof m.name !== 'string' || !WASM_NAME.test(m.name) || m.name !== stem) bad('name', `name is ${JSON.stringify(m.name)}, expected "${stem}" (the file name before .manifest.json)`);
+  const known = typeof m.repo === 'string' && isObj(repos) && Object.hasOwn(repos, m.repo);
+  if (!known) bad('repo', `repo ${JSON.stringify(m.repo)} is not a repo in ${CLAIMS_FILE}`);
+  if (!SHA_RE.test(String(m.sha))) bad('sha', `sha is ${JSON.stringify(m.sha)}, expected a full 40-hex commit SHA`);
+  // sources
+  const src = m.sources;
+  if (!isObj(src)) {
+    bad('sources', 'sources must be an object with dir and files');
+  } else {
+    if (src.dir !== dir) bad('sources', `sources.dir is ${JSON.stringify(src.dir)}, expected "${dir}" (the manifest's own directory)`);
+    for (const p of entryProblems(src.files, 'sources.files', safePath)) bad('sources', p);
+  }
+  if (!isObj(m.source) || typeof m.source.entry !== 'string' || !isObj(src?.files) || !Object.hasOwn(src.files, m.source.entry)) {
+    bad('source', `source.entry ${JSON.stringify(m.source?.entry)} must be a file listed in sources.files`);
+  } else if (known && SHA_RE.test(String(m.sha)) && m.source.tree_url !== undefined
+    && m.source.tree_url !== `https://github.com/${repos[m.repo]?.owner}/${m.repo}/tree/${m.sha}`) {
+    bad('source', `source.tree_url ${JSON.stringify(m.source.tree_url)} is not the tree of ${m.repo} at ${m.sha}`);
+  }
+  // pyodide
+  const py = m.pyodide;
+  if (!isObj(py)) {
+    bad('pyodide', 'pyodide must be an object with version, cdn_base and files');
+  } else {
+    const v = String(py.version);
+    if (!PYODIDE_VERSION.test(v)) bad('pyodide', `pyodide.version is ${JSON.stringify(py.version)}, expected <major>.<minor>.<patch>`);
+    else if (py.cdn_base !== `https://cdn.jsdelivr.net/pyodide/v${v}/full/`) bad('cdn_base', `pyodide.cdn_base is ${JSON.stringify(py.cdn_base)}, expected "https://cdn.jsdelivr.net/pyodide/v${v}/full/"`);
+    const problems = entryProblems(py.files, 'pyodide.files', (k) => ARTIFACT_NAME.test(k), true);
+    for (const p of problems) bad('pyodide', p);
+    if (!problems.length) {
+      const missing = PYODIDE_REQUIRED.filter((f) => !Object.hasOwn(py.files, f));
+      if (missing.length) bad('pyodide', `pyodide.files must list ${missing.join(', ')}`);
+    }
+  }
+  if (!Array.isArray(m.packages) || !m.packages.length || !m.packages.every(isStr)) bad('packages', 'packages must be a non-empty array of package names');
+  // wheels
+  if (m.wheels !== undefined) {
+    const problems = entryProblems(m.wheels, 'wheels', (k) => safePath(k) && WHEEL_PATH.test(k));
+    for (const p of problems) bad('wheels', p);
+    if (!problems.length) {
+      for (const [k, e] of Object.entries(m.wheels)) {
+        if (e.pypi_sha256 !== e.sha256) bad(k, `wheels entry ${JSON.stringify(k)}: sha256 ${e.sha256} is not its PyPI digest pypi_sha256 ${JSON.stringify(e.pypi_sha256)}`);
+      }
+    }
+  }
+  // parity
+  const par = m.parity;
+  if (!isObj(par)) {
+    bad('parity', 'parity must be an object with bins, dir, files, source_path and tolerances');
+  } else {
+    if (!safePath(par.dir)) bad('parity', `parity.dir ${JSON.stringify(par.dir)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+    if (!safePath(par.source_path)) bad('parity', `parity.source_path ${JSON.stringify(par.source_path)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+    if (!Number.isInteger(par.bins) || par.bins < 2 || par.bins > 256) bad('bins', `parity.bins is ${JSON.stringify(par.bins)}, expected an integer from 2 to 256`);
+    const problems = entryProblems(par.files, 'parity.files', safePath);
+    for (const p of problems) bad('parity', p);
+    if (!problems.length) {
+      const missing = PARITY_REQUIRED.filter((f) => !Object.hasOwn(par.files, f));
+      if (missing.length) bad('parity', `parity.files must list ${missing.join(', ')}`);
+    }
+    for (const p of toleranceProblems(par.tolerances)) bad('tolerances', p);
+  }
+  // samples
+  if (m.samples !== undefined) {
+    if (!isObj(m.samples) || !Object.keys(m.samples).length) {
+      bad('samples', 'samples must be an object with at least one entry');
+    } else {
+      for (const [k, s] of Object.entries(m.samples)) {
+        if (!isObj(s) || !isStr(s.label) || !safePath(s.path) || typeof s.content_type !== 'string' || !s.content_type.startsWith('image/') || !isStr(s.case)) {
+          bad('samples', `samples entry ${JSON.stringify(k)} needs label, a repo-relative path, an image/* content_type and a case name`);
+        }
+      }
+    }
+  }
+  return out.length ? fail(out) : { manifest: m, findings: [] };
+}
+
+// extractPyodidePins(html, file) -> [{ name, sha, tag, file, line }] for every element carrying data-pyodide-pin.
+export function extractPyodidePins(html, file = '') {
+  return extractPinsByAttr(html, file, 'data-pyodide-pin');
+}
+
+// extractPyodideFacts(html, file) -> [{ name, path, text, leaf, file, line }] for every element carrying
+// data-pyodide-fact="<manifest name>:<dotted.path>". Comments are blanked first. text is the trimmed content up to
+// the closing tag; leaf is false when that content holds another tag (or there is no closing tag). A value that is
+// not <name>:<path> gives name and path ''.
+export function extractPyodideFacts(html, file = '') {
+  const src = blankComments(String(html)), lineOf = lineIndex(src), out = [];
+  for (const m of src.matchAll(WASM_PIN_TAG)) {
+    const value = attr(m[2], 'data-pyodide-fact');
+    if (value === null) continue;
+    const start = m.index + m[0].length, end = src.indexOf(`</${m[1]}`, start), body = end < 0 ? '' : src.slice(start, end);
+    const v = FACT_VALUE.exec(value);
+    out.push({ name: v ? v[1] : '', path: v ? v[2] : '', raw: value, text: body.trim(), leaf: end >= 0 && !/<[A-Za-z!/]/.test(body), file, line: lineOf(m.index) });
+  }
+  return out;
+}
+
+// One upstream file at the pin against a manifest entry: the sha256 of the text's UTF-8 bytes must be the entry's.
+// readEvidence decodes as UTF-8 and drops a BOM, so a vendored file with a BOM can never match (and is also reported
+// on its own). NOT_FOUND is a mismatch (the file is not upstream at that commit); everything else that stops the read
+// is COULD_NOT_VERIFY (or INPUT_TOO_LARGE), never a pass.
+async function upstreamFinding(readEvidence, repo, sha, upstream, entry, file, line) {
+  let text;
+  try {
+    if (typeof readEvidence !== 'function') throw Object.assign(new Error('no upstream source'), { code: 'COULD_NOT_VERIFY' });
+    text = await readEvidence(repo, sha, upstream);
+  } catch (err) {
+    if (err?.code === 'NOT_FOUND') return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${upstream} is not in ${repo} at ${sha.slice(0, 7)}`)];
+    const code = err?.code === 'INPUT_TOO_LARGE' ? 'INPUT_TOO_LARGE' : 'COULD_NOT_VERIFY';
+    return [finding(file, line, code, `cannot read ${repo}@${sha.slice(0, 7)}:${upstream} (${err?.message ?? 'read failed'})`)];
+  }
+  const sha256 = sha256Of(UTF8.encode(String(text)));
+  if (sha256 === entry.sha256) return [];
+  return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${upstream} at ${repo}@${sha.slice(0, 7)} has sha256 ${sha256}, the manifest says ${entry.sha256}`)];
+}
+
+// golden/meta.json at the pin names every fixture's sha256: each vendored fixtures/* entry must equal it, every fixture
+// it names must be vendored, and its bins must be parity.bins.
+async function metaFindings(readEvidence, m, file, at) {
+  const rel = `${m.parity.source_path}/golden/meta.json`, line = at('golden/meta.json');
+  let meta;
+  try {
+    if (typeof readEvidence !== 'function') throw Object.assign(new Error('no upstream source'), { code: 'COULD_NOT_VERIFY' });
+    meta = JSON.parse(await readEvidence(m.repo, m.sha, rel));
+  } catch (err) {
+    if (err instanceof SyntaxError) return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} at ${m.sha.slice(0, 7)} is not valid JSON`)];
+    if (err?.code === 'NOT_FOUND') return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} is not in ${m.repo} at ${m.sha.slice(0, 7)}`)];
+    const code = err?.code === 'INPUT_TOO_LARGE' ? 'INPUT_TOO_LARGE' : 'COULD_NOT_VERIFY';
+    return [finding(file, line, code, `cannot read ${m.repo}@${m.sha.slice(0, 7)}:${rel} (${err?.message ?? 'read failed'})`)];
+  }
+  if (!isObj(meta?.fixtures)) return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} at ${m.sha.slice(0, 7)} has no fixtures map`)];
+  const out = [];
+  for (const [p, e] of Object.entries(m.parity.files)) {
+    if (!p.startsWith('fixtures/')) continue;
+    if (meta.fixtures[p] !== e.sha256) out.push(finding(file, at(p), 'PYODIDE_SOURCE_MISMATCH', `${p}: sha256 ${e.sha256}, but ${rel} at ${m.sha.slice(0, 7)} says ${JSON.stringify(meta.fixtures[p] ?? null)}`));
+  }
+  for (const p of Object.keys(meta.fixtures).sort(byteOrder)) {
+    if (!Object.hasOwn(m.parity.files, p)) out.push(finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${p} is in ${rel} at ${m.sha.slice(0, 7)} but not listed in parity.files`));
+  }
+  if (meta.bins !== m.parity.bins) out.push(finding(file, at('bins'), 'PYODIDE_SOURCE_MISMATCH', `parity.bins is ${m.parity.bins}, but ${rel} at ${m.sha.slice(0, 7)} says ${JSON.stringify(meta.bins ?? null)}`));
+  return out;
+}
+
+// Each sample must be its case's parity fixture: the same bytes as that fixture's parity.files entry and the
+// case's content type. The case's file comes from parity.dir/cases.json on disk (which is itself hashed).
+async function sampleFindings(m, mf, { root, readFile, at }) {
+  if (!m.samples) return [];
+  const out = [], abs = (rel) => path.resolve(root, ...rel.split('/'));
+  let cases;
+  try {
+    cases = JSON.parse(new TextDecoder().decode(bytesOf(await readFile(abs(`${m.parity.dir}/cases.json`)))))?.cases;
+  } catch { /* reported below for every sample: a sample whose case cannot be resolved is a finding */ }
+  for (const [k, s] of Object.entries(m.samples)) {
+    const line = at(k), c = Array.isArray(cases) ? cases.find((x) => isObj(x) && x.name === s.case) : undefined;
+    const fixture = c && typeof c.file === 'string' && Object.hasOwn(m.parity.files, c.file) ? m.parity.files[c.file] : null;
+    if (!fixture) { out.push(finding(mf.file, line, 'PYODIDE_SAMPLE', `samples.${k}: case ${JSON.stringify(s.case)} has no fixture listed in parity.files (${m.parity.dir}/cases.json)`)); continue; }
+    if (s.content_type !== c.content_type) out.push(finding(mf.file, line, 'PYODIDE_SAMPLE', `samples.${k}: content_type ${s.content_type}, but case ${s.case} uses ${JSON.stringify(c.content_type)}`));
+    let buf;
+    try {
+      buf = bytesOf(await readFile(abs(s.path)));
+    } catch (err) {
+      out.push(finding(mf.file, line, 'PYODIDE_HASH', `${s.path} is listed but ${err?.code === 'ENOENT' ? 'missing on disk' : `unreadable (${err?.code ?? err?.message})`}`));
+      continue;
+    }
+    const sha = sha256Of(buf);
+    if (sha !== fixture.sha256 || buf.length !== fixture.bytes) {
+      out.push(finding(mf.file, line, 'PYODIDE_SAMPLE', `${s.path}: ${buf.length} bytes sha256 ${sha}, but its fixture ${m.parity.dir}/${c.file} is ${fixture.bytes} bytes sha256 ${fixture.sha256}`));
+    }
+  }
+  return out;
+}
+
+// checkPyodideManifests({ manifests, pins, facts, repos, root, readFile, readdir, isReachable, readEvidence, project })
+//   -> Promise<findings>.
+//   manifests  [{ name (file stem), file (repo-relative label), text }] for every scripts/demos/*-py/*.manifest.json
+//   pins       extractPyodidePins() results from the pages in scope
+//   facts      extractPyodideFacts() results from the pages in scope
+//   project    --project: only manifests for that repo are checked (an unreadable manifest is checked whatever the
+//              scope, as in checkWasmManifests)
+// Findings:
+//   PYODIDE_MANIFEST         schema or field problem (parsePyodideManifest), or a path that resolves outside the repo
+//   INPUT_TOO_LARGE          an oversized manifest, or an upstream file over the read cap
+//   PYODIDE_HASH             a listed wheel, source, parity file or sample missing, or with other bytes or sha256
+//   PYODIDE_UNLISTED         a file below the manifest's directory other than the manifest and its listed wheels and
+//                            sources, or a file below parity.dir not in parity.files
+//   PYODIDE_SAMPLE           a sample that is not byte-identical to its case's fixture, or whose case is unknown
+//   PYODIDE_SOURCE_MISMATCH  a vendored source with a UTF-8 BOM; a vendored source or parity JSON file that differs
+//                            from (or is absent at) the same path at the pinned sha; a fixture whose sha256 differs
+//                            from golden/meta.json at the pinned sha, a meta fixture not vendored, or other bins
+//   PYODIDE_PIN_MISMATCH     a data-pyodide-pin that is not a <code> holding the start of the manifest sha
+//   PYODIDE_UNPINNED         a manifest that no page pins
+//   PYODIDE_NO_MANIFEST      a data-pyodide-pin naming a manifest that does not exist
+//   PYODIDE_FACT_MISMATCH    a data-pyodide-fact that is not a leaf, is not <name>:<path>, names a missing or invalid
+//                            manifest, resolves to nothing or to an object, or whose text is not String(value)
+//   PIN_UNREACHABLE / COULD_NOT_VERIFY  from checkPins; COULD_NOT_VERIFY also when an upstream file cannot be read
+// Messages name repo-relative paths only. Upstream reads run at most 4 at a time.
+export async function checkPyodideManifests({ manifests = [], pins = [], facts = [], repos = {}, root = '.', readFile = fsReadFile,
+  readdir = fsReaddir, isReachable, readEvidence, project, concurrency = 4 } = {}) {
+  const out = [], reach = [], names = new Set(manifests.map((mf) => mf.name)), valid = new Map();
+  const abs = (rel) => path.resolve(root, ...rel.split('/'));
+  for (const mf of manifests) {
+    let repo;
+    try { repo = JSON.parse(mf.text)?.repo; } catch { /* unreadable: parsePyodideManifest reports it, whatever the scope */ }
+    const inScope = project === undefined || typeof repo !== 'string' || repo === project;
+    const { manifest: m, findings } = parsePyodideManifest(mf.text, mf.file, { repos });
+    if (m) valid.set(mf.name, m);
+    if (!inScope) continue;
+    out.push(...findings);
+    if (!m) continue;
+    const at = (key) => keyLine(mf.text, key);
+    const hashed = async (rel, e, key) => (inside(root, abs(rel)) ? hashFindings(readFile, abs(rel), rel, e, mf.file, at(key), 'PYODIDE_HASH')
+      : [finding(mf.file, at(key), 'PYODIDE_MANIFEST', `${rel} resolves outside the repo`)]);
+    const dir = m.sources.dir, own = new Set([mf.file]);
+    for (const [k, e] of Object.entries(m.wheels ?? {})) {
+      own.add(`${dir}/${k}`);
+      out.push(...await hashed(`${dir}/${k}`, e, k));
+    }
+    for (const [k, e] of Object.entries(m.sources.files)) {
+      const rel = `${dir}/${k}`;
+      own.add(rel);
+      out.push(...await hashed(rel, e, k));
+      try {
+        const head = bytesOf(await readFile(abs(rel)));
+        if (UTF8_BOM.every((b, i) => head[i] === b)) out.push(finding(mf.file, at(k), 'PYODIDE_SOURCE_MISMATCH', `${rel} starts with a UTF-8 BOM, which upstream sources do not have`));
+      } catch { /* a missing or unreadable source is already PYODIDE_HASH */ }
+    }
+    for (const f of await filesBelow(readdir, root, dir)) {
+      if (!own.has(f)) out.push(finding(mf.file, at('sources'), 'PYODIDE_UNLISTED', `${f} is in ${dir} but is not this manifest or a listed wheel or source`));
+    }
+    const pdir = m.parity.dir, want = new Set();
+    for (const [p, e] of Object.entries(m.parity.files)) {
+      want.add(`${pdir}/${p}`);
+      out.push(...await hashed(`${pdir}/${p}`, e, p));
+    }
+    for (const f of inside(root, abs(pdir)) ? await filesBelow(readdir, root, pdir) : []) {
+      if (!want.has(f)) out.push(finding(mf.file, at('parity'), 'PYODIDE_UNLISTED', `${f} is in ${pdir} but not listed (and hashed) in parity.files`));
+    }
+    for (const s of Object.values(m.samples ?? {})) {
+      if (!inside(root, abs(s.path))) out.push(finding(mf.file, at('samples'), 'PYODIDE_MANIFEST', `${s.path} resolves outside the repo`));
+    }
+    if (Object.values(m.samples ?? {}).every((s) => inside(root, abs(s.path)))) out.push(...await sampleFindings(m, mf, { root, readFile, at }));
+    // Identity with the pinned upstream commit (D-06).
+    const jobs = [...Object.entries(m.sources.files).map(([k, e]) => ({ upstream: k, e, key: k })),
+      ...Object.entries(m.parity.files).filter(([p]) => p.endsWith('.json')).map(([p, e]) => ({ upstream: `${m.parity.source_path}/${p}`, e, key: p }))];
+    const results = await mapLimit(jobs, concurrency, (j) => upstreamFinding(readEvidence, m.repo, m.sha, j.upstream, j.e, mf.file, at(j.key)));
+    out.push(...results.flat(), ...await metaFindings(readEvidence, m, mf.file, at));
+    reach.push({ repo: m.repo, sha: m.sha, file: mf.file, line: at('sha'), kind: 'pyodide' });
+    const mine = pins.filter((p) => p.name === mf.name);
+    if (!mine.length) out.push(finding(mf.file, at('name'), 'PYODIDE_UNPINNED', `no page pins this build; expected <code data-pyodide-pin="${mf.name}">${m.sha.slice(0, 7)}</code>`));
+    for (const p of mine) {
+      if (p.tag !== 'code' || !PIN_SHA.test(p.sha) || !m.sha.startsWith(p.sha)) {
+        out.push(finding(p.file, p.line, 'PYODIDE_PIN_MISMATCH', `<${p.tag} data-pyodide-pin="${p.name}"> holds ${JSON.stringify(p.sha)}, expected <code> holding the start of ${m.sha} (${mf.file})`));
+      }
+    }
+  }
+  for (const p of pins) {
+    if (!names.has(p.name)) out.push(finding(p.file, p.line, 'PYODIDE_NO_MANIFEST', `data-pyodide-pin="${p.name}" names scripts/demos/*-py/${p.name}.manifest.json, which does not exist`));
+  }
+  for (const f of facts) {
+    const bad = (msg) => out.push(finding(f.file, f.line, 'PYODIDE_FACT_MISMATCH', `data-pyodide-fact="${f.raw ?? `${f.name}:${f.path}`}" ${msg}`));
+    if (!f.name || !f.path) { bad('is not <manifest name>:<dotted.path>'); continue; }
+    if (!f.leaf) { bad('must be a leaf element (text only, closed in the same element)'); continue; }
+    const m = valid.get(f.name);
+    if (!m) { bad(names.has(f.name) ? `names ${f.name}.manifest.json, which is not a valid manifest` : `names scripts/demos/*-py/${f.name}.manifest.json, which does not exist`); continue; }
+    const value = f.path.split('.').reduce((o, k) => (isObj(o) && Object.hasOwn(o, k) ? o[k] : undefined), m);
+    if (value === undefined || value === null) bad(`resolves to nothing in ${f.name}.manifest.json`);
+    else if (typeof value === 'object') bad(`resolves to an object or array in ${f.name}.manifest.json, not a value`);
+    else if (f.text !== String(value)) bad(`shows ${JSON.stringify(f.text)}, but ${f.name}.manifest.json has ${JSON.stringify(String(value))}`);
   }
   out.push(...await checkPins(reach, { isReachable }));
   return sortFindings(out);
@@ -1991,8 +2320,12 @@ function apiSources({ repos = {}, fetchImpl = fetch, token } = {}) {
   const files = new Map();
   const segs = (p) => String(p).split('/').map(enc).join('/');
   // raw.githubusercontent.com gets no token: the repos are public, and the token stays with api.github.com.
+  // A server error is retried once: raw.githubusercontent.com intermittently answers HTTP 501 for an empty blob (seen
+  // on app/__init__.py, 2026-11-14) and the next request succeeds. A second failure still rejects (fail closed).
   const raw = (repo, ref, rel) => memo(files, `${repo}@${ref}:${rel}`, async () => {
-    const r = await githubGet(`https://raw.githubusercontent.com/${enc(repos[repo].owner)}/${enc(repo)}/${segs(ref)}/${segs(rel)}`, { fetchImpl });
+    const url = `https://raw.githubusercontent.com/${enc(repos[repo].owner)}/${enc(repo)}/${segs(ref)}/${segs(rel)}`;
+    let r = await githubGet(url, { fetchImpl });
+    if (!r.ok && r.status >= 500) r = await githubGet(url, { fetchImpl });
     if (r.ok) return r.text;
     throw new SourceError(r.tooLarge ? 'INPUT_TOO_LARGE' : r.status === 404 ? 'NOT_FOUND' : 'COULD_NOT_VERIFY', r.reason);
   });

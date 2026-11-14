@@ -55,9 +55,10 @@ function importAll(pyodide, names) {
 }
 
 // readCdn(name) and readVendored(rel) return a Uint8Array: the worker fetches, Node reads its verified cache and the
-// repo. Python only ever receives data as call arguments (toPy, callKwargs), never as source text.
+// repo. Python only ever receives data as call arguments (toPy, callKwargs), never as source text. stdLibURL, when
+// given, is passed to loadPyodide (a caller that pre-verified python_stdlib.zip hands it over as a blob URL).
 export async function loadIqg({ manifest, pyodideUrl, indexURL, readCdn, readVendored, onProgress = () => {},
-  now = () => performance.now() } = {}) {
+  now = () => performance.now(), stdLibURL } = {}) {
   const loadTimings = [];
   const step = async (stage, fn) => {
     onProgress({ stage, done: false });
@@ -74,7 +75,7 @@ export async function loadIqg({ manifest, pyodideUrl, indexURL, readCdn, readVen
     try {
       const { loadPyodide } = await import(pyodideUrl);
       const py = await loadPyodide({ indexURL, lockFileContents: lockText, packageBaseUrl: indexURL,
-        stdout: () => {}, stderr: () => {} });
+        stdout: () => {}, stderr: () => {}, ...(stdLibURL ? { stdLibURL } : {}) });
       return { pyodide: py, lock: JSON.parse(lockText) };
     } catch (err) {
       throw new IqgLoadError('load', 'pyodide.mjs', { cause: err });
@@ -145,7 +146,14 @@ function session(pyodide, pyimport) {
   const mods = {};
   const mod = (name) => (mods[name] ??= pyimport(name));
   const py = () => ({ Settings: (mods.Settings ??= mod('app.core.config').Settings),
-    get pipeline() { return mod('app.services.pipeline'); }, get diagnostics() { return mod('app.services.diagnostics'); } });
+    get pipeline() { return mod('app.services.pipeline'); }, get diagnostics() { return mod('app.services.diagnostics'); },
+    get Response() { return (mods.Response ??= mod('app.models.schemas').QualityDiagnosticsResponse); } });
+
+  // The Response JSON panel's text: pydantic's own indent-2 serialization of the response pipeline.outcome built.
+  function indented(json) {
+    const model = py().Response.model_validate_json(json);
+    try { return model.model_dump_json.callKwargs({ indent: 2 }); } finally { model.destroy(); }
+  }
 
   function config() {
     const { Settings, diagnostics } = py(), s = Settings();
@@ -166,7 +174,10 @@ function session(pyodide, pyimport) {
     }
     const r = o.toJs({ dict_converter: Object.fromEntries });
     o.destroy();
-    if (r.status === 200) return { status: 200, response_json: r.response_json, response: JSON.parse(r.response_json) };
+    if (r.status === 200) {
+      return { status: 200, response_json: r.response_json, response_json_indented: indented(r.response_json),
+        response: JSON.parse(r.response_json) };
+    }
     const cause = r.cause ?? null; // Python None arrives as undefined
     return { fail: failOf({ status: r.status, cause }), status: r.status, detail: r.detail, cause };
   }

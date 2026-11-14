@@ -38,33 +38,64 @@
     <div class="demo-head">
       <div>
         <h3 class="demo-title" id="pd-demo-h" tabindex="-1">Try the Image Quality Gate</h3>
-        <p class="demo-desc">Use any image, or a sample, and get blur and brightness scores from a JavaScript port
-          of the service's analysis.</p>
+        <p class="demo-desc">Use any image, or a sample. The service's own Python code analyzes it in this tab and
+          shows its real measurements, checks and diagnostics.</p>
       </div>
       <span class="demo-pill">Runs in your browser</span>
     </div>
     <div class="fidelity">
-      <span class="fidelity-label">Ported project logic</span>
-      <p>A JavaScript port of the service's analysis at commit <code>8e47d74</code> runs in this tab: EXIF
-        orientation, a Pillow-compatible Lanczos resize to 1600px, OpenCV grayscale, variance of Laplacian and mean
-        brightness. It is a port, and results can differ (see Known differences). Nothing is uploaded.</p>
+      <span class="fidelity-label">The real pipeline, in Python, in your browser</span>
+      <p>Every measurement, check and diagnostic here comes from image-quality-gate's own code at commit
+        <code data-pyodide-pin="iqg">e7fcab7</code>, running in Pyodide <span
+          data-pyodide-fact="iqg:pyodide.version">314.0.7</span> (CPython compiled to WebAssembly) in this tab. Your
+        image is not uploaded.</p>
       <details>
-        <summary>What's ported</summary>
+        <summary>What runs here</summary>
         <ul>
-          <li>Ported: <code>app/services/preprocess.py</code> (<code>load_and_normalize</code>, <code>to_gray</code>),
-            <code>app/services/quality.py</code> (<code>variance_of_laplacian</code>, <code>brightness</code>,
-            <code>assess</code>), the defaults in <code>app/core/config.py</code> and the Docker image's values from
-            <code>.env.example</code>, which a container built from the Dockerfile copies to <code>.env</code>. The
-            Lanczos resize reproduces Pillow's fixed-point resampler byte for byte;
-            grayscale uses OpenCV 5's coefficients.</li>
-          <li>Decoding and EXIF orientation are done by your browser (<code>createImageBitmap</code>) instead of Pillow;
-            colour profiles are ignored on both sides. Errors mirror the API's 415, 413 and 400 answers.</li>
-          <li>Known differences: transparent images (browsers drop the colour under fully transparent pixels, Pillow
-            keeps it); formats only one side can decode; browsers that add privacy noise to canvas reads; and OpenCV
-            4.x, whose grayscale rounding differs by one level on some pixels.</li>
-          <li>The 32-megapixel limit is this demo's own browser guard. The service rejects images over 25 megapixels
-            (<code>MAX_IMAGE_PIXELS</code>) with 400 Invalid image data, checking the header before decoding, so an
-            image between the two limits is scored here but would be rejected by the service.</li>
+          <li>Source: <a
+              href="https://github.com/BrianKYildirim/image-quality-gate/tree/e7fcab76ab094ecfb6f784fdbc6767164a6ec563"
+              target="_blank" rel="noopener noreferrer">the image-quality-gate tree at this commit</a>, the <a
+              href="scripts/demos/iqg-py/iqg.manifest.json" target="_blank" rel="noopener noreferrer">build
+              manifest</a> and the <a href="scripts/demos/iqg-py/app/services/pipeline.py" target="_blank"
+              rel="noopener noreferrer">entry module</a>.</li>
+          <li>The entry is <code>app/services/pipeline.py</code>, the module the service's <code>POST /quality</code>
+            and <code>POST /quality/diagnostics</code> routes run through. Thresholds and limits come from the real
+            <code>app/core/config.py</code>. This tab has no <code>.env</code> file or environment variables, so the
+            settings are <code>config.py</code>'s defaults until you override a threshold.</li>
+          <li>The Python runtime and its packages load from <code>cdn.jsdelivr.net</code> at a pinned version on your
+            first run. The service code and two small wheels it needs (pydantic-settings and python-dotenv) come from
+            this site. The manifest records the sha256 of every file the demo loads. Your browser checks the package
+            lock and the files from this site against it, and Pyodide checks each package against that lock. The core
+            runtime files load from Pyodide's versioned CDN path without that check. This site's automated checks hash
+            every listed file and verify that the vendored code is identical to the commit above.</li>
+          <li>Parity: a test runs every fixture through the native service and through this build. It requires the same
+            decisions, image facts and errors, and lets floating-point results differ only within the tolerances in
+            the manifest: the blur score by at most <span data-claim="iqg.parity.tolerance.blur_score">0.01</span>
+            times its value, and brightness by at most <span
+              data-claim="iqg.parity.tolerance.brightness">0.01</span> gray levels. The manifest also bounds the
+            brightness spread, the gray and Laplacian extremes, the Laplacian mean and the histogram.</li>
+          <li>Differences from native:
+            <ul>
+              <li>Library versions: OpenCV <span data-pyodide-fact="iqg:pyodide.libraries.opencv">4.11.0</span> here
+                and <span data-pyodide-fact="iqg:native.opencv">5.0.0</span> natively; Pillow <span
+                  data-pyodide-fact="iqg:pyodide.libraries.pillow">12.2.0</span> with the IJG libjpeg <span
+                  data-pyodide-fact="iqg:pyodide.libraries.libjpeg">9.0</span> JPEG decoder here, and Pillow <span
+                  data-pyodide-fact="iqg:native.pillow">13.0.0</span> with libjpeg-turbo <span
+                  data-pyodide-fact="iqg:native.libjpeg_turbo">3.2.0</span> natively; numpy <span
+                  data-pyodide-fact="iqg:pyodide.libraries.numpy">2.4.6</span> here and <span
+                  data-pyodide-fact="iqg:native.numpy">2.4.6</span> natively; Python <span
+                  data-pyodide-fact="iqg:pyodide.python">3.14.2</span> here and <span
+                  data-pyodide-fact="iqg:native.python">3.11.18</span> natively.</li>
+              <li>On the parity fixtures, only some JPEG photos scored differently, all within the tolerances above,
+                and every PNG matched exactly. The likely cause is the different JPEG decoder and library versions.</li>
+              <li>One thread.</li>
+              <li>Memory is limited by WebAssembly's 32-bit address space and by your browser, so a very large image
+                can run out of memory here when the service would not.</li>
+              <li>A result within the tolerance of a threshold carries a note saying the native service could decide
+                differently.</li>
+              <li>Stage timings are measured in your browser and say nothing about the service's speed.</li>
+            </ul>
+          </li>
         </ul>
       </details>
     </div>
@@ -174,8 +205,8 @@ def brightness(gray: np.ndarray) -&gt; float:
   <p class="pd-eyebrow smaller-h3 muted mono"><span class="pd-num">05</span> Results</p>
   <h3 class="pd-h3" id="pd-results-h" tabindex="-1">What has been measured</h3>
   <ul class="pd-metrics">
-    <li><span class="v">Live</span><span class="l">stage timings of the JavaScript port, measured by your browser in the
-        demo above</span><span class="pd-src">Live in demo</span></li>
+    <li><span class="v">Live</span><span class="l">the pipeline's own stage timings, measured by your browser in Pyodide
+        in the demo above; they describe this browser, not the server</span><span class="pd-src">Live in demo</span></li>
     <li><span class="v"
         data-claim="iqg.limits.png_bomb_12000x12000.before.rss_growth_mib.ubuntu-wsl2">825 MiB</span><span
         class="l">peak memory growth of the server for one small PNG that decodes to 12000 × 12000 pixels, before the

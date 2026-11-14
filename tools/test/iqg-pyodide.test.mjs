@@ -8,7 +8,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IqgLoadError, loadIqg } from '../../scripts/demos/iqg-pyodide.js';
+import { IqgLoadError, loadIqg, nearThreshold } from '../../scripts/demos/iqg-pyodide.js';
+import { createWorkerHandler } from '../../scripts/demos/iqg-worker.js';
 import { defaultCacheDir, ensurePyodideCache, loadIqgNode } from '../pyodide-cache.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +17,7 @@ const ROOT = path.join(HERE, '..', '..');
 const PY_DIR = path.join(ROOT, 'scripts', 'demos', 'iqg-py');
 const manifest = JSON.parse(readFileSync(path.join(PY_DIR, 'iqg.manifest.json'), 'utf8'));
 const SAMPLES = path.join(ROOT, 'static', 'demo', 'iqg');
+const PARITY = path.join(ROOT, 'tools', 'test', 'fixtures', 'iqg-parity');
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const byteSorted = (keys) => [...keys].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
@@ -176,4 +178,170 @@ test('upstream diagnostics.config in Pyodide reports the rule, setting sources a
   }
   const pydantic = iqg.pyimport('pydantic');
   try { assert.equal(pydantic.VERSION, libs.pydantic); } finally { pydantic.destroy(); }
+});
+
+// ---------- Session on the pinned code (IQG-04, IQG-09, IQG-10): what the demo's worker calls ----------
+
+const parityCases = JSON.parse(readFileSync(path.join(PARITY, 'cases.json'), 'utf8'));
+const parityCase = (name) => parityCases.cases.find((c) => c.name === name);
+const parityGolden = (name) => JSON.parse(readFileSync(path.join(PARITY, 'golden', `${name}.json`), 'utf8'));
+const analyzeCase = (name) => {
+  const c = parityCase(name);
+  assert.ok(c, `${name}: a parity case`);
+  const bytes = new Uint8Array(readFileSync(path.join(PARITY, ...c.file.split('/'))));
+  return iqg.analyze(bytes, c.content_type, { overrides: c.settings, bins: parityCases.bins });
+};
+
+for (const [name, fail, status, detail, cause] of [
+  ['not_image', 'unsupported_type', 415, 'Unsupported media type', null],
+  ['no_content_type', 'unsupported_type', 415, 'Unsupported media type', null],
+  ['too_large', 'too_large', 413, 'File too large', null],
+  ['overlimit_header', 'too_many_pixels', 400, 'Invalid image data', 'ImageTooLarge'],
+  ['truncated', 'invalid_image', 400, 'Invalid image data', 'OSError'],
+  ['empty', 'invalid_image', 400, 'Invalid image data', 'UnidentifiedImageError'],
+]) {
+  test(`session.analyze on ${name} gives fail ${fail} with the status and detail Python returned`, () => {
+    const o = analyzeCase(name);
+    assert.deepEqual(o, { fail, status, detail, cause });
+    assert.deepEqual({ status: o.status, detail: o.detail, cause: o.cause }, parityGolden(name).error, 'equals the native golden');
+  });
+}
+
+test('session.reevaluate runs upstream Settings and the Decision on blurry_small\'s scores', () => {
+  const r = analyzeCase('blurry_small');
+  assert.equal(r.status, 200);
+  const scores = { blur_score: r.response.blur_score, brightness: r.response.brightness };
+  const edited = iqg.reevaluate(scores, { blur_min: 70 });
+  assert.equal(edited.settings.blur_min.source, 'init');
+  assert.equal(edited.settings.blur_min.value, 70);
+  assert.equal(edited.settings.bright_min.source, 'default');
+  assert.deepEqual(edited.decision.checks.map((c) => [c.name, c.comparator]), [['blur_min', '>='], ['bright_min', '>='], ['bright_max', '<=']]);
+  // The same edit as the blurry_small_overrides case gives native's Decision and settings for it exactly.
+  const g = parityGolden('blurry_small_overrides');
+  const same = iqg.reevaluate(scores, parityCase('blurry_small_overrides').settings);
+  assert.deepEqual(same.decision, g.diagnostics.decision);
+  assert.deepEqual(same.settings, g.diagnostics.settings);
+  assert.deepEqual(iqg.reevaluate(scores, { blur_min: -1 }), { invalid: ['blur_min'] });
+  const at = iqg.reevaluate(scores, { blur_min: scores.blur_score });
+  const blur = at.decision.checks.find((c) => c.name === 'blur_min');
+  assert.equal(blur.threshold, scores.blur_score);
+  assert.equal(blur.margin, 0);
+  assert.equal(blur.passed, true, 'a blur threshold exactly at blur_score passes (>=)');
+});
+
+test('nearThreshold flags near_threshold\'s blur check from the manifest tolerances, and nothing on sharp_small', () => {
+  const near = analyzeCase('near_threshold'), sharp = analyzeCase('sharp_small');
+  assert.equal(near.status, 200);
+  assert.equal(sharp.status, 200);
+  assert.ok(nearThreshold(near.response.diagnostics.decision.checks, manifest.parity.tolerances).includes('blur_min'));
+  assert.deepEqual(nearThreshold(sharp.response.diagnostics.decision.checks, manifest.parity.tolerances), []);
+});
+
+// ---------- Worker protocol (iqg-worker.js createWorkerHandler, the demo's message contract) ----------
+
+// A handler over the already-loaded session: load replays the loader's real progress order, then hands it over.
+function workerOver(session, { load } = {}) {
+  const posted = [];
+  const handle = createWorkerHandler({
+    load: load ?? (async (m, url, onProgress) => {
+      for (const { stage, ms } of session.loadTimings) { onProgress({ stage, done: false }); onProgress({ stage, done: true, ms }); }
+      return session;
+    }),
+    post: (m) => posted.push(m),
+  });
+  return { posted, handle, last: () => posted.at(-1) };
+}
+const sampleBytes = (name) => {
+  const b = readFileSync(path.join(SAMPLES, name));
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+};
+
+test('worker load posts progress for each stage, then done with Python\'s config and the load timings', async () => {
+  const w = workerOver(iqg);
+  await w.handle({ id: 1, op: 'load', manifest, manifestUrl: 'https://example.invalid/iqg.manifest.json' });
+  const progress = w.posted.filter((m) => m.progress);
+  assert.ok(progress.length > 0, 'progress was posted');
+  assert.ok(progress.every((m) => m.id === 1));
+  assert.deepEqual(progress.filter((m) => m.progress.done).map((m) => m.progress.stage), ['runtime', 'packages', 'sources']);
+  const done = w.last();
+  assert.equal(done.id, 1);
+  assert.equal(done.done, true);
+  assert.deepEqual(done.config, iqg.config(), 'the config payload is diagnostics.config from Python');
+  assert.ok(Number.isInteger(done.config.settings.max_upload_bytes.value) && done.config.settings.max_upload_bytes.value > 0);
+  assert.equal(done.config.settings.max_upload_bytes.source, 'derived');
+  assert.deepEqual(done.load, iqg.loadTimings);
+});
+
+test('worker analyze of sharp_small posts done with status 200 and Python\'s response_json', async () => {
+  const w = workerOver(iqg);
+  await w.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  await w.handle({ id: 2, op: 'analyze', bytes: sampleBytes('sharp_small.jpg'), type: 'image/jpeg' });
+  const m = w.last();
+  assert.equal(m.id, 2);
+  assert.equal(m.done, true);
+  assert.equal(m.status, 200);
+  const res = JSON.parse(m.response_json);
+  assert.equal(res.is_ok, true);
+  assert.equal(res.diagnostics.laplacian_histogram.counts.length, manifest.parity.bins, 'histogram uses the manifest bins');
+  assert.deepEqual(res.diagnostics.decision.checks.map((c) => c.name), ['blur_min', 'bright_min', 'bright_max']);
+});
+
+test('session.analyze of sharp_small returns pydantic\'s indent-2 serialization of the same response', () => {
+  const r = iqg.analyze(new Uint8Array(readFileSync(path.join(SAMPLES, 'sharp_small.jpg'))), 'image/jpeg', { bins: manifest.parity.bins });
+  assert.equal(r.status, 200);
+  assert.equal(typeof r.response_json_indented, 'string');
+  assert.deepEqual(JSON.parse(r.response_json_indented), JSON.parse(r.response_json), 'the same QualityDiagnosticsResponse');
+  assert.ok(r.response_json_indented.startsWith('{\n  "blur_score"'), 'pydantic model_dump_json(indent=2)');
+});
+
+test('worker analyze reply carries response_json_indented', async () => {
+  const w = workerOver(iqg);
+  await w.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  await w.handle({ id: 2, op: 'analyze', bytes: sampleBytes('sharp_small.jpg'), type: 'image/jpeg' });
+  const m = w.last();
+  assert.equal(m.done, true);
+  assert.equal(typeof m.response_json_indented, 'string');
+  assert.deepEqual(JSON.parse(m.response_json_indented), JSON.parse(m.response_json));
+});
+
+test('worker analyze with type text/plain posts fail unsupported_type with the 415 Python returned', async () => {
+  const w = workerOver(iqg);
+  await w.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  await w.handle({ id: 7, op: 'analyze', bytes: sampleBytes('sharp_small.jpg'), type: 'text/plain' });
+  assert.deepEqual(w.last(), { id: 7, fail: 'unsupported_type', status: 415, detail: 'Unsupported media type', cause: null });
+});
+
+test('worker reevaluate posts Python\'s decision and settings, or invalid_override naming the field', async () => {
+  const w = workerOver(iqg);
+  await w.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  const scores = { blur_score: 100, brightness: 128 };
+  await w.handle({ id: 2, op: 'reevaluate', scores, overrides: { blur_min: 70 } });
+  const ok = w.last();
+  assert.equal(ok.done, true);
+  assert.equal(ok.decision.is_ok, true);
+  assert.equal(ok.settings.blur_min.source, 'init');
+  await w.handle({ id: 3, op: 'reevaluate', scores, overrides: { blur_min: -1 } });
+  assert.deepEqual(w.last(), { id: 3, fail: 'invalid_override', fields: ['blur_min'] });
+});
+
+test('worker load failures post the IqgLoadError kind, or load for any other error', async () => {
+  const integrity = workerOver(iqg, { load: async () => { throw new IqgLoadError('integrity', 'x'); } });
+  await integrity.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  assert.deepEqual(integrity.posted, [{ id: 1, fail: 'integrity' }]);
+  const other = workerOver(iqg, { load: async () => { throw new TypeError('Failed to fetch'); } });
+  await other.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  assert.deepEqual(other.posted, [{ id: 1, fail: 'load' }]);
+  await other.handle({ id: 2, op: 'analyze', bytes: sampleBytes('sharp_small.jpg'), type: 'image/jpeg' });
+  assert.deepEqual(other.last(), { id: 2, fail: 'fatal' }, 'no runtime after a failed load');
+});
+
+test('worker posts fail fatal when the session throws', async () => {
+  const broken = { ...iqg, analyze: () => { throw new Error('RuntimeError: memory access out of bounds'); },
+    reevaluate: () => { throw new Error('boom'); } };
+  const w = workerOver(broken);
+  await w.handle({ id: 1, op: 'load', manifest, manifestUrl: 'x' });
+  await w.handle({ id: 2, op: 'analyze', bytes: sampleBytes('sharp_small.jpg'), type: 'image/jpeg' });
+  assert.deepEqual(w.last(), { id: 2, fail: 'fatal' });
+  await w.handle({ id: 3, op: 'reevaluate', scores: { blur_score: 1, brightness: 1 }, overrides: {} });
+  assert.deepEqual(w.last(), { id: 3, fail: 'fatal' });
 });
