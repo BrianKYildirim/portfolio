@@ -1,0 +1,196 @@
+{
+ "schema": "pyodide-manifest/1",
+ "name": "iqg",
+ "repo": "image-quality-gate",
+ "sha": "f5bcf02b8167eb13c5de30537b228c6654c60bc0",
+ "source": {
+  "tree_url": "https://github.com/BrianKYildirim/image-quality-gate/tree/f5bcf02b8167eb13c5de30537b228c6654c60bc0",
+  "entry": "app/services/preprocess.py"
+ },
+ "pyodide": {
+  "version": "314.0.7",
+  "released": "2026-09-14",
+  "why": "Newest stable Pyodide release at least two weeks old that ships every needed package (315 is alpha-only), and it ships numpy 2.4.6, the version the native service runs.",
+  "cdn_base": "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/",
+  "python": "3.14.2",
+  "libraries": {
+   "python": "3.14.2",
+   "numpy": "2.4.6",
+   "opencv": "4.11.0",
+   "pillow": "12.2.0",
+   "libjpeg": "9.0",
+   "libjpeg_turbo": null,
+   "pydantic": "2.12.5"
+  },
+  "files": {
+   "annotated_types-0.7.0-py3-none-any.whl": {
+    "bytes": 11963,
+    "sha256": "6541523b4b16c1953d2fc9b82fb86c540eea9f78fca329ab371ed13a8b0faa51"
+   },
+   "numpy-2.4.6-cp314-cp314-pyemscripten_2026_0_wasm32.whl": {
+    "bytes": 2960568,
+    "sha256": "a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf"
+   },
+   "opencv_python-4.11.0.86-cp314-cp314-pyemscripten_2026_0_wasm32.whl": {
+    "bytes": 10675764,
+    "sha256": "469a8ba6758ec4e0bce12436da977a1db3a953e320927c3f55ca6233a5d20acf"
+   },
+   "pillow-12.2.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl": {
+    "bytes": 1037806,
+    "sha256": "e29838b7a756e4ee0f27a9cfa9a387ee0dfa2e9dd44be2dd595130b9f9d93ac3"
+   },
+   "pydantic-2.12.5-py3-none-any.whl": {
+    "bytes": 463578,
+    "sha256": "04854875001e07a8a74d87b7c80296cba168773d8c9804e232d695f82484d7d7"
+   },
+   "pydantic_core-2.41.5-cp314-cp314-pyemscripten_2026_0_wasm32.whl": {
+    "bytes": 1310164,
+    "sha256": "54703fa42a0d4d574283cfb8f08050ba7820c9a42b0a21bc1286407d9a9e54da"
+   },
+   "pyodide-lock.json": {
+    "bytes": 119077,
+    "sha256": "5dc2fc119108bc148c7457dc86e7675b5c87e1cafd420b9c34c1eaef7b36c010"
+   },
+   "pyodide.asm.mjs": {
+    "bytes": 1250344,
+    "sha256": "f7cdc8ece80678ceb712f8e65ebe6d3a83203a180c399865f49612a051693635"
+   },
+   "pyodide.asm.wasm": {
+    "bytes": 9598218,
+    "sha256": "cc36e3cab04fdfc9a63ff13eb52eae2b911bf46c025cc7b281f394bd3de1d5e6"
+   },
+   "pyodide.mjs": {
+    "bytes": 17931,
+    "sha256": "6f1d60f7bf529beb300f0f47983c921d3982363640ba20af0e38efdddbc66109"
+   },
+   "python_stdlib.zip": {
+    "bytes": 2545637,
+    "sha256": "fa1957e5777068fc4f7437f96d860ae2fbe9c19732ba06c84e004ec16dd7dd7a"
+   },
+   "typing_extensions-4.15.0-py3-none-any.whl": {
+    "bytes": 44613,
+    "sha256": "4fec68770a05408e668a4fa53d6bf4f0f684b9dacf820c7c5d6e97d3ad225e29"
+   },
+   "typing_inspection-0.4.2-py3-none-any.whl": {
+    "bytes": 14610,
+    "sha256": "deb989630985f7a7296b90357a947a804a7612cecbb6439d6e71128e01f61051"
+   }
+  }
+ },
+ "packages": [
+  "numpy",
+  "opencv-python",
+  "pillow",
+  "pydantic"
+ ],
+ "wheels": {
+  "wheels/pydantic_settings-2.16.2-py3-none-any.whl": {
+   "bytes": 81994,
+   "sha256": "8d523e5c129b097686bde019bd6109bff53f4c8c3f63f1ddf9933ffa42e5ab4f",
+   "pypi_sha256": "8d523e5c129b097686bde019bd6109bff53f4c8c3f63f1ddf9933ffa42e5ab4f",
+   "url": "https://files.pythonhosted.org/packages/39/88/4131c51ff87b7cd7f82a1194d0c0a2b7ca68c72d9da04c3b7e69ab91a79f/pydantic_settings-2.16.2-py3-none-any.whl"
+  },
+  "wheels/python_dotenv-1.2.4-py3-none-any.whl": {
+   "bytes": 23266,
+   "sha256": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+   "pypi_sha256": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+   "url": "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl"
+  }
+ },
+ "sources": {
+  "dir": "scripts/demos/iqg-py",
+  "files": {
+   "app/__init__.py": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "app/core/__init__.py": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "app/core/config.py": {
+    "bytes": 2355,
+    "sha256": "9c490f108f959de0f2bdfc83e9ea6617fce2a9255cb1cfe1c72c51c4612cad72"
+   },
+   "app/core/timing.py": {
+    "bytes": 1786,
+    "sha256": "bffaa720c1b1daff418a9e442f419e7153af731e3f251c7bfc7d49cb5dcf3215"
+   },
+   "app/models/__init__.py": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "app/models/schemas.py": {
+    "bytes": 2756,
+    "sha256": "7b5f5b6f8d9d12ed473daf517eff8aec2884eb94d51b83bb2c5d3645ab4c7b19"
+   },
+   "app/services/__init__.py": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "app/services/diagnostics.py": {
+    "bytes": 6075,
+    "sha256": "2f33c317e4f0d084f1a97de30b53afe2fecbdac111e66e0e530b2301ecd1093e"
+   },
+   "app/services/preprocess.py": {
+    "bytes": 4251,
+    "sha256": "103633bfff0a81e02fd1f82c668caf729beefadfc92362e683ac4fa7758c88ad"
+   },
+   "app/services/quality.py": {
+    "bytes": 2607,
+    "sha256": "d1761b3af81e8a200ab08251e136e15a6073a96aeecda288016b26e96ffc4cf2"
+   }
+  }
+ },
+ "parity": {
+  "bins": 64,
+  "tolerances": {
+   "blur_score": {
+    "measured_max": 0.00420153578249101,
+    "rationale": "Measured max 0.00420153578249101 (relative, photo_4032x3024_exif6) over 26 cases; nonzero only in 9 YCbCr JPEG cases (exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200, photo_4032x3024_exif6); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0).",
+    "rel": 0.01
+   },
+   "brightness": {
+    "abs": 0.01,
+    "measured_max": 0.002695312499994884,
+    "rationale": "Measured max 0.002695312499994884 (absolute, exif2) over 26 cases; nonzero only in 9 YCbCr JPEG cases (exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200, photo_4032x3024_exif6); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0)."
+   },
+   "brightness_std": {
+    "abs": 0.01,
+    "measured_max": 0.0026712170230069887,
+    "rationale": "Measured max 0.0026712170230069887 (absolute, photo_4032x3024_exif6) over 26 cases; nonzero only in 9 YCbCr JPEG cases (exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200, photo_4032x3024_exif6); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0)."
+   },
+   "gray_extremes": {
+    "abs": 2,
+    "measured_max": 1,
+    "rationale": "Measured max 1 (absolute, photo_4032x3024_exif6) over 26 cases; nonzero only in 1 YCbCr JPEG case (photo_4032x3024_exif6); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0)."
+   },
+   "histogram_w1_bins": {
+    "abs": 0.1,
+    "measured_max": 0.047171426725569246,
+    "rationale": "Measured max 0.047171426725569246 (native bin widths, photo_4032x3024_exif6) over 26 cases; nonzero only in 9 YCbCr JPEG cases (exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200, photo_4032x3024_exif6); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0)."
+   },
+   "laplacian_extremes": {
+    "abs": 4,
+    "measured_max": 2,
+    "rationale": "Measured max 2 (absolute, photo_4032x3024_exif6) over 26 cases; nonzero only in 1 YCbCr JPEG case (photo_4032x3024_exif6); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0)."
+   },
+   "laplacian_mean": {
+    "abs": 0.00001,
+    "measured_max": 0.0000032552083333303727,
+    "rationale": "Measured max 0.0000032552083333303727 (absolute, exif2) over 26 cases; nonzero only in 8 YCbCr JPEG cases (exif2, exif3, exif4, exif5, exif6, exif7, exif8, photo_1600x1200); identical: the other YCbCr JPEG cases (blurry_small, blurry_small_overrides, photo_4032x3024_exif6, sharp_small, strivoimg1), JPEG CMYK (1), PNG L (2), PNG RGB (2), PNG P (1), PNG RGBA (1). Likely cause: different JPEG decoder and library versions (native libjpeg-turbo 3.2.0, OpenCV 5.0.0, Pillow 13.0.0; Pyodide IJG libjpeg 9.0, OpenCV 4.11.0, Pillow 12.2.0)."
+   }
+  }
+ },
+ "native": {
+  "environment": "ubuntu-wsl2",
+  "libjpeg": "6.2",
+  "libjpeg_turbo": "3.2.0",
+  "numpy": "2.4.6",
+  "opencv": "5.0.0",
+  "pillow": "13.0.0",
+  "pydantic": "2.14.3",
+  "pydantic_settings": "2.16.2",
+  "python": "3.11.18"
+ }
+}

@@ -7,3 +7,8 @@ tools/test/fixtures/md/README.crlf.md -text
 # sha256 in scripts/demos/wasm/ratelimit.manifest.json, so core.autocrlf must never convert them.
 scripts/demos/wasm/** -text
 tools/test/fixtures/ratelimit-parity/** -text
+# The IQG demo's vendored Python sources and wheels, its parity fixtures and its sample images are checked byte for
+# byte against scripts/demos/iqg-py/iqg.manifest.json, so core.autocrlf must never convert them.
+scripts/demos/iqg-py/** -text
+tools/test/fixtures/iqg-parity/** -text
+static/demo/iqg/** -text
