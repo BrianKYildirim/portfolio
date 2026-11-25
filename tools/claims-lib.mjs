@@ -1848,7 +1848,12 @@ export async function checkWasmManifests({ manifests = [], pins = [], repos = {}
 // that the page pins it. Everything fails closed: unknown reachability or an upstream file that cannot be read is
 // COULD_NOT_VERIFY, never a pass. The CDN files (pyodide.files) are verified by the node --test parity leg (owner
 // answer P2=A), so this check makes no CDN request.
+// A second schema, pyodide-exact-manifest/1 (the key-value demo), describes a standard-library-only engine: no
+// packages and no wheels, an exact parity set (parity.mode "exact": every masked transcript equals its native golden,
+// with the excluded keys and paths listed) and native recordings of the real server (recordings, native). It has its
+// own rules below; pyodide-manifest/1 is validated exactly as before.
 export const PYODIDE_MANIFEST_SCHEMA = 'pyodide-manifest/1';
+export const PYODIDE_EXACT_MANIFEST_SCHEMA = 'pyodide-exact-manifest/1';
 const PYODIDE_VERSION = /^\d+\.\d+\.\d+$/;
 const PYODIDE_REQUIRED = Object.freeze(['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json']);
 const PARITY_REQUIRED = Object.freeze(['cases.json', 'golden/meta.json']);
@@ -1877,6 +1882,58 @@ function toleranceProblems(tols) {
   return out;
 }
 
+// The rules only pyodide-exact-manifest/1 has (the shared name, repo, sha, sources, source and pyodide rules run in
+// parsePyodideManifest): a standard-library engine (empty packages, no wheels, no samples), exact parity (no bins or
+// tolerances: every masked transcript equals its native golden, so what is masked must be listed), recordings that
+// each name the commit they ran at, and the native environment they were taken in.
+const PARITY_SCRIPT = /^scripts\/[^/]+\.json$/;
+function exactProblems(m, bad) {
+  if (!Array.isArray(m.packages) || m.packages.length) bad('packages', 'packages must be an empty array (the engine uses the standard library only)');
+  if (m.wheels !== undefined) bad('wheels', 'wheels is not allowed (the engine uses the standard library only)');
+  if (m.samples !== undefined) bad('samples', 'samples is not part of this schema');
+  const par = m.parity;
+  if (!isObj(par)) {
+    bad('parity', 'parity must be an object with mode, dir, source_path, excluded_keys, excluded_paths and files');
+  } else {
+    if (par.mode !== 'exact') bad('parity', `parity.mode is ${JSON.stringify(par.mode)}, expected "exact"`);
+    if (!safePath(par.dir)) bad('parity', `parity.dir ${JSON.stringify(par.dir)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+    if (!safePath(par.source_path)) bad('parity', `parity.source_path ${JSON.stringify(par.source_path)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+    if (par.bins !== undefined || par.tolerances !== undefined) bad('parity', 'parity.bins and parity.tolerances are not allowed with mode "exact" (nothing is compared within a tolerance)');
+    for (const k of ['excluded_keys', 'excluded_paths']) {
+      if (!Array.isArray(par[k]) || !par[k].length || !par[k].every(isStr)) bad('parity', `parity.${k} must be a non-empty array of strings`);
+    }
+    const problems = entryProblems(par.files, 'parity.files', safePath);
+    for (const p of problems) bad('parity', p);
+    if (!problems.length) {
+      if (!Object.hasOwn(par.files, 'golden/meta.json')) bad('parity', 'parity.files must list golden/meta.json');
+      if (!Object.keys(par.files).some((k) => PARITY_SCRIPT.test(k))) bad('parity', 'parity.files must list at least one scripts/*.json');
+    }
+  }
+  if (m.recordings !== undefined) {
+    const rec = m.recordings;
+    if (!isObj(rec)) {
+      bad('recordings', 'recordings must be an object with dir and scenarios');
+    } else {
+      if (!safePath(rec.dir)) bad('recordings', `recordings.dir ${JSON.stringify(rec.dir)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+      if (!isObj(rec.scenarios) || !Object.keys(rec.scenarios).length) bad('recordings', 'recordings.scenarios must name at least one scenario');
+      else {
+        for (const [k, s] of Object.entries(rec.scenarios)) {
+          const where = `recordings.scenarios.${k}`;
+          if (!WASM_NAME.test(k)) { bad('recordings', `${where}: the scenario name must be lowercase letters, digits, "-" or "_"`); continue; }
+          if (!isObj(s)) { bad(k, `${where} must be an object`); continue; }
+          if (!isStr(s.label)) bad(k, `${where}.label must be a non-empty string`);
+          if (!safePath(s.upstream_dir)) bad(k, `${where}.upstream_dir ${JSON.stringify(s.upstream_dir)} is not a repo-relative path (forward slashes, no "..", no leading "/")`);
+          if (!SHA_RE.test(String(s.source_sha))) bad(k, `${where}.source_sha is ${JSON.stringify(s.source_sha)}, expected a full 40-hex commit SHA`);
+          const problems = entryProblems(s.files, `${where}.files`, safePath);
+          for (const p of problems) bad(k, p);
+          if (!problems.length && !Object.hasOwn(s.files, 'meta.json')) bad(k, `${where}.files must list meta.json`);
+        }
+      }
+    }
+  }
+  if (!isObj(m.native) || !isStr(m.native.environment) || !isStr(m.native.python)) bad('native', 'native must be an object with non-empty environment and python strings');
+}
+
 // parsePyodideManifest(text, file, { repos }) -> { manifest, findings }. manifest is null when anything is wrong (code
 // PYODIDE_MANIFEST, or INPUT_TOO_LARGE for an oversized text), so a manifest is either fully valid or not used.
 // file is the repo-relative path of the manifest: name must be its stem and sources.dir its directory.
@@ -1887,7 +1944,12 @@ export function parsePyodideManifest(text, file, { repos = {} } = {}) {
   try { m = JSON.parse(text); } catch (err) { return fail([finding(file, 1, 'PYODIDE_MANIFEST', `not valid JSON (${err.message})`)]); }
   if (!isObj(m)) return fail([finding(file, 1, 'PYODIDE_MANIFEST', 'must be a JSON object')]);
   const out = [], bad = (key, msg) => out.push(finding(file, keyLine(text, key), 'PYODIDE_MANIFEST', msg));
-  if (m.schema !== PYODIDE_MANIFEST_SCHEMA) bad('schema', `schema is ${JSON.stringify(m.schema)}, expected "${PYODIDE_MANIFEST_SCHEMA}"`);
+  // Any schema other than the exact one is validated as pyodide-manifest/1 (and reported), so an unknown schema string
+  // never gets the lighter exact rules.
+  const exact = m.schema === PYODIDE_EXACT_MANIFEST_SCHEMA;
+  if (!exact && m.schema !== PYODIDE_MANIFEST_SCHEMA) {
+    bad('schema', `schema is ${JSON.stringify(m.schema)}, expected "${PYODIDE_MANIFEST_SCHEMA}" or "${PYODIDE_EXACT_MANIFEST_SCHEMA}"`);
+  }
   const stem = manifestStem(file), dir = posixDir(file);
   if (typeof m.name !== 'string' || !WASM_NAME.test(m.name) || m.name !== stem) bad('name', `name is ${JSON.stringify(m.name)}, expected "${stem}" (the file name before .manifest.json)`);
   const known = typeof m.repo === 'string' && isObj(repos) && Object.hasOwn(repos, m.repo);
@@ -1921,6 +1983,10 @@ export function parsePyodideManifest(text, file, { repos = {} } = {}) {
       const missing = PYODIDE_REQUIRED.filter((f) => !Object.hasOwn(py.files, f));
       if (missing.length) bad('pyodide', `pyodide.files must list ${missing.join(', ')}`);
     }
+  }
+  if (exact) {
+    exactProblems(m, bad);
+    return out.length ? fail(out) : { manifest: m, findings: [] };
   }
   if (!Array.isArray(m.packages) || !m.packages.length || !m.packages.every(isStr)) bad('packages', 'packages must be a non-empty array of package names');
   // wheels
@@ -1989,7 +2055,7 @@ export function extractPyodideFacts(html, file = '') {
 // readEvidence decodes as UTF-8 and drops a BOM, so a vendored file with a BOM can never match (and is also reported
 // on its own). NOT_FOUND is a mismatch (the file is not upstream at that commit); everything else that stops the read
 // is COULD_NOT_VERIFY (or INPUT_TOO_LARGE), never a pass.
-async function upstreamFinding(readEvidence, repo, sha, upstream, entry, file, line) {
+async function upstreamFinding(readEvidence, repo, sha, upstream, entry, file, line, note = '') {
   let text;
   try {
     if (typeof readEvidence !== 'function') throw Object.assign(new Error('no upstream source'), { code: 'COULD_NOT_VERIFY' });
@@ -2001,7 +2067,7 @@ async function upstreamFinding(readEvidence, repo, sha, upstream, entry, file, l
   }
   const sha256 = sha256Of(UTF8.encode(String(text)));
   if (sha256 === entry.sha256) return [];
-  return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${upstream} at ${repo}@${sha.slice(0, 7)} has sha256 ${sha256}, the manifest says ${entry.sha256}`)];
+  return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${upstream} at ${repo}@${sha.slice(0, 7)} has sha256 ${sha256}, the manifest says ${entry.sha256}${note}`)];
 }
 
 // golden/meta.json at the pin names every fixture's sha256: each vendored fixtures/* entry must equal it, every fixture
@@ -2028,6 +2094,63 @@ async function metaFindings(readEvidence, m, file, at) {
     if (!Object.hasOwn(m.parity.files, p)) out.push(finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${p} is in ${rel} at ${m.sha.slice(0, 7)} but not listed in parity.files`));
   }
   if (meta.bins !== m.parity.bins) out.push(finding(file, at('bins'), 'PYODIDE_SOURCE_MISMATCH', `parity.bins is ${m.parity.bins}, but ${rel} at ${m.sha.slice(0, 7)} says ${JSON.stringify(meta.bins ?? null)}`));
+  return out;
+}
+
+// The exact schema's golden/meta.json binding. golden/meta.json at the pin names the sha256 of every engine source and
+// every parity script and the keys and paths that were masked; each must be what the manifest lists, in both
+// directions (an upstream entry the manifest lacks and a manifest entry upstream lacks are both mismatches).
+const sameList = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+async function exactMetaFindings(readEvidence, m, file, at) {
+  const rel = `${m.parity.source_path}/golden/meta.json`, line = at('golden/meta.json'), short = m.sha.slice(0, 7);
+  let meta;
+  try {
+    if (typeof readEvidence !== 'function') throw Object.assign(new Error('no upstream source'), { code: 'COULD_NOT_VERIFY' });
+    meta = JSON.parse(await readEvidence(m.repo, m.sha, rel));
+  } catch (err) {
+    if (err instanceof SyntaxError) return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} at ${short} is not valid JSON`)];
+    if (err?.code === 'NOT_FOUND') return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} is not in ${m.repo} at ${short}`)];
+    const code = err?.code === 'INPUT_TOO_LARGE' ? 'INPUT_TOO_LARGE' : 'COULD_NOT_VERIFY';
+    return [finding(file, line, code, `cannot read ${m.repo}@${short}:${rel} (${err?.message ?? 'read failed'})`)];
+  }
+  if (!isObj(meta)) return [finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} at ${short} is not a JSON object`)];
+  const out = [];
+  const bind = (what, mine, theirs, lineOf) => {
+    if (!isObj(theirs)) { out.push(finding(file, line, 'PYODIDE_SOURCE_MISMATCH', `${rel} at ${short} has no ${what} map`)); return; }
+    for (const k of [...new Set([...Object.keys(mine), ...Object.keys(theirs)])].sort(byteOrder)) {
+      if (mine[k] !== theirs[k]) out.push(finding(file, lineOf(k), 'PYODIDE_SOURCE_MISMATCH', `${what} ${k}: sha256 ${JSON.stringify(mine[k] ?? null)}, but ${rel} at ${short} says ${JSON.stringify(theirs[k] ?? null)}`));
+    }
+  };
+  bind('sources', Object.fromEntries(Object.entries(m.sources.files).map(([k, e]) => [k, e.sha256])), meta.sources, (k) => (Object.hasOwn(m.sources.files, k) ? at(k) : line));
+  bind('scripts', Object.fromEntries(Object.entries(m.parity.files).filter(([k]) => PARITY_SCRIPT.test(k)).map(([k, e]) => [k, e.sha256])), meta.scripts, (k) => (Object.hasOwn(m.parity.files, k) ? at(k) : line));
+  for (const k of ['excluded_keys', 'excluded_paths']) {
+    if (!sameList(meta[k], m.parity[k])) out.push(finding(file, at(k), 'PYODIDE_SOURCE_MISMATCH', `parity.${k} is ${JSON.stringify(m.parity[k])}, but ${rel} at ${short} says ${JSON.stringify(meta[k] ?? null)}`));
+  }
+  return out;
+}
+
+// A vendored recording's meta.json (kv-recording/1) must say the recording ran the commit the manifest names, from a
+// clean tree, in the manifest's native environment, and carry a date. The vendored file is the one on disk (its bytes
+// are hashed and compared with upstream elsewhere); a missing file is already PYODIDE_HASH.
+async function recordingFindings(m, mf, { root, readFile, at }) {
+  const out = [];
+  for (const [name, s] of Object.entries(m.recordings?.scenarios ?? {})) {
+    const rel = `${m.recordings.dir}/${name}/meta.json`, line = at(name);
+    if (!inside(root, path.resolve(root, ...rel.split('/')))) continue;
+    let meta;
+    try {
+      meta = JSON.parse(new TextDecoder().decode(bytesOf(await readFile(path.resolve(root, ...rel.split('/'))))));
+    } catch (err) {
+      if (err instanceof SyntaxError) out.push(finding(mf.file, line, 'PYODIDE_RECORDING', `${name}: ${rel} is not valid JSON`));
+      continue;
+    }
+    const bad = (msg) => out.push(finding(mf.file, line, 'PYODIDE_RECORDING', `${name}: ${msg}`));
+    if (!isObj(meta)) { bad(`${rel} is not a JSON object`); continue; }
+    if (meta.source?.sha !== s.source_sha) bad(`${rel} says source.sha ${JSON.stringify(meta.source?.sha ?? null)}, the manifest says source_sha ${s.source_sha}`);
+    if (meta.source?.dirty !== false) bad(`${rel} says source.dirty ${JSON.stringify(meta.source?.dirty ?? null)}, expected false (the recording must come from a clean tree)`);
+    if (meta.environment_id !== m.native.environment) bad(`${rel} says environment_id ${JSON.stringify(meta.environment_id ?? null)}, the manifest's native.environment is ${JSON.stringify(m.native.environment)}`);
+    if (!isStr(meta.date_utc)) bad(`${rel} has no date_utc`);
+  }
   return out;
 }
 
@@ -2070,19 +2193,29 @@ async function sampleFindings(m, mf, { root, readFile, at }) {
 // Findings:
 //   PYODIDE_MANIFEST         schema or field problem (parsePyodideManifest), or a path that resolves outside the repo
 //   INPUT_TOO_LARGE          an oversized manifest, or an upstream file over the read cap
-//   PYODIDE_HASH             a listed wheel, source, parity file or sample missing, or with other bytes or sha256
-//   PYODIDE_UNLISTED         a file below the manifest's directory other than the manifest and its listed wheels and
-//                            sources, or a file below parity.dir not in parity.files
+//   PYODIDE_HASH             a listed wheel, source, parity file, recording file or sample missing, or with other bytes
+//                            or sha256
+//   PYODIDE_UNLISTED         a file below the manifest's directory other than the manifest and its listed wheels,
+//                            sources and recording files, a file below parity.dir not in parity.files, or a file below
+//                            recordings.dir not listed
 //   PYODIDE_SAMPLE           a sample that is not byte-identical to its case's fixture, or whose case is unknown
+//   PYODIDE_RECORDING        (exact manifests) a vendored recording whose meta.json is not valid JSON, or says another
+//                            source.sha than the scenario's source_sha, a dirty tree, another environment_id than
+//                            native.environment, or no date_utc
 //   PYODIDE_SOURCE_MISMATCH  a vendored source with a UTF-8 BOM; a vendored source or parity JSON file that differs
 //                            from (or is absent at) the same path at the pinned sha; a fixture whose sha256 differs
-//                            from golden/meta.json at the pinned sha, a meta fixture not vendored, or other bins
+//                            from golden/meta.json at the pinned sha, a meta fixture not vendored, or other bins.
+//                            Exact manifests: a recording file that differs from (or is absent at) upstream_dir/<file>
+//                            at the pinned sha; a source that differs at a recording's source_sha (the recording ran other
+//                            engine code); golden/meta.json at the pinned sha naming other sources, scripts,
+//                            excluded_keys or excluded_paths than the manifest lists
 //   PYODIDE_PIN_MISMATCH     a data-pyodide-pin that is not a <code> holding the start of the manifest sha
 //   PYODIDE_UNPINNED         a manifest that no page pins
 //   PYODIDE_NO_MANIFEST      a data-pyodide-pin naming a manifest that does not exist
 //   PYODIDE_FACT_MISMATCH    a data-pyodide-fact that is not a leaf, is not <name>:<path>, names a missing or invalid
 //                            manifest, resolves to nothing or to an object, or whose text is not String(value)
-//   PIN_UNREACHABLE / COULD_NOT_VERIFY  from checkPins; COULD_NOT_VERIFY also when an upstream file cannot be read
+//   PIN_UNREACHABLE / COULD_NOT_VERIFY  from checkPins (the manifest sha and, for exact manifests, every recording's
+//                            source_sha); COULD_NOT_VERIFY also when an upstream file cannot be read
 // Messages name repo-relative paths only. Upstream reads run at most 4 at a time.
 export async function checkPyodideManifests({ manifests = [], pins = [], facts = [], repos = {}, root = '.', readFile = fsReadFile,
   readdir = fsReaddir, isReachable, readEvidence, project, concurrency = 4 } = {}) {
@@ -2101,6 +2234,13 @@ export async function checkPyodideManifests({ manifests = [], pins = [], facts =
     const hashed = async (rel, e, key) => (inside(root, abs(rel)) ? hashFindings(readFile, abs(rel), rel, e, mf.file, at(key), 'PYODIDE_HASH')
       : [finding(mf.file, at(key), 'PYODIDE_MANIFEST', `${rel} resolves outside the repo`)]);
     const dir = m.sources.dir, own = new Set([mf.file]);
+    // Every recording file as { scenario, rel (below the scenario), path (repo-relative), e, s } (exact manifests only).
+    const recs = m.schema === PYODIDE_EXACT_MANIFEST_SCHEMA ? Object.entries(m.recordings?.scenarios ?? {}).flatMap(([scenario, s]) =>
+      Object.entries(s.files).map(([rel, e]) => ({ scenario, rel, path: `${m.recordings.dir}/${scenario}/${rel}`, e, s }))) : [];
+    for (const r of recs) {
+      own.add(r.path);
+      out.push(...await hashed(r.path, r.e, r.scenario));
+    }
     for (const [k, e] of Object.entries(m.wheels ?? {})) {
       own.add(`${dir}/${k}`);
       out.push(...await hashed(`${dir}/${k}`, e, k));
@@ -2115,7 +2255,15 @@ export async function checkPyodideManifests({ manifests = [], pins = [], facts =
       } catch { /* a missing or unreadable source is already PYODIDE_HASH */ }
     }
     for (const f of await filesBelow(readdir, root, dir)) {
-      if (!own.has(f)) out.push(finding(mf.file, at('sources'), 'PYODIDE_UNLISTED', `${f} is in ${dir} but is not this manifest or a listed wheel or source`));
+      if (!own.has(f)) out.push(finding(mf.file, at('sources'), 'PYODIDE_UNLISTED', `${f} is in ${dir} but is not this manifest or a listed wheel, source${recs.length ? ' or recording file' : ''}`));
+    }
+    // A recordings dir outside the manifest's directory is scanned on its own; below it, the scan above covers it.
+    const rdir = m.recordings?.dir;
+    if (rdir !== undefined && !rdir.startsWith(`${dir}/`) && inside(root, abs(rdir))) {
+      const listed = new Set(recs.map((r) => r.path));
+      for (const f of await filesBelow(readdir, root, rdir)) {
+        if (!listed.has(f)) out.push(finding(mf.file, at('recordings'), 'PYODIDE_UNLISTED', `${f} is in ${rdir} but is not a listed recording file`));
+      }
     }
     const pdir = m.parity.dir, want = new Set();
     for (const [p, e] of Object.entries(m.parity.files)) {
@@ -2132,9 +2280,22 @@ export async function checkPyodideManifests({ manifests = [], pins = [], facts =
     // Identity with the pinned upstream commit (D-06).
     const jobs = [...Object.entries(m.sources.files).map(([k, e]) => ({ upstream: k, e, key: k })),
       ...Object.entries(m.parity.files).filter(([p]) => p.endsWith('.json')).map(([p, e]) => ({ upstream: `${m.parity.source_path}/${p}`, e, key: p }))];
-    const results = await mapLimit(jobs, concurrency, (j) => upstreamFinding(readEvidence, m.repo, m.sha, j.upstream, j.e, mf.file, at(j.key)));
-    out.push(...results.flat(), ...await metaFindings(readEvidence, m, mf.file, at));
+    // A recording file is the file at upstream_dir/<file> at the pin; the vendored sources are also read at each
+    // recording's own source_sha, so the recordings ran the engine code the browser runs (D-02, D-14).
+    for (const r of recs) jobs.push({ upstream: `${r.s.upstream_dir}/${r.rel}`, e: r.e, key: r.scenario });
+    const atSource = [...new Set(recs.map((r) => r.s.source_sha))].filter((x) => x !== m.sha).sort();
+    for (const sha of atSource) {
+      const first = Object.keys(m.recordings.scenarios).find((k) => m.recordings.scenarios[k].source_sha === sha);
+      for (const [k, e] of Object.entries(m.sources.files)) jobs.push({ upstream: k, e, key: first, sha, note: ` (the recording ran other engine code than the vendored ${k})` });
+    }
+    const results = await mapLimit(jobs, concurrency, (j) => upstreamFinding(readEvidence, m.repo, j.sha ?? m.sha, j.upstream, j.e, mf.file, at(j.key), j.note));
+    if (m.schema === PYODIDE_EXACT_MANIFEST_SCHEMA) {
+      out.push(...results.flat(), ...await exactMetaFindings(readEvidence, m, mf.file, at), ...await recordingFindings(m, mf, { root, readFile, at }));
+    } else {
+      out.push(...results.flat(), ...await metaFindings(readEvidence, m, mf.file, at));
+    }
     reach.push({ repo: m.repo, sha: m.sha, file: mf.file, line: at('sha'), kind: 'pyodide' });
+    for (const [name, sc] of Object.entries(m.recordings?.scenarios ?? {})) reach.push({ repo: m.repo, sha: sc.source_sha, file: mf.file, line: at(name), kind: 'pyodide' });
     const mine = pins.filter((p) => p.name === mf.name);
     if (!mine.length) out.push(finding(mf.file, at('name'), 'PYODIDE_UNPINNED', `no page pins this build; expected <code data-pyodide-pin="${mf.name}">${m.sha.slice(0, 7)}</code>`));
     for (const p of mine) {

@@ -213,7 +213,9 @@ async function checkWasm(root, scope, isReachable, { repos, project }) {
 
 // D-01 / D-06: each scripts/demos/<dir>-py/<name>.manifest.json against the bytes it lists, the same files at the
 // pinned upstream commit (sources.readEvidence), the reachability of that commit, and the data-pyodide-pin and
-// data-pyodide-fact elements in the pages. A root without any scripts/demos/*-py/ directory has no manifests. With
+// data-pyodide-fact elements in the pages. Two manifest schemas are accepted: pyodide-manifest/1 (wheels, tolerance
+// parity: the image-quality-gate demo) and pyodide-exact-manifest/1 (standard library only, exact parity and native
+// recordings checked against their source commit: the key-value demo); claims-lib.mjs documents each one's rules. A root without any scripts/demos/*-py/ directory has no manifests. With
 // --project, only that repo's manifests count (an unreadable manifest counts: it is reported whatever the scope).
 async function checkPyodide(root, scope, sources, { repos, project }) {
   let dirs;

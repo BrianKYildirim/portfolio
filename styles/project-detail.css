@@ -72,7 +72,6 @@ html.pd-lock {
 
 .demo-code,
 .demo-log,
-.demo-kv-log,
 .demo-lane {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -82,7 +81,6 @@ html.pd-lock {
 .demo-card,
 .fidelity,
 .demo-counters>div,
-.demo-kv-client,
 .pd-node,
 .pd-surface {
   background: var(--surface);
@@ -108,10 +106,7 @@ html.pd-lock {
 .demo-filerow,
 .demo-scale,
 .demo-bk-note,
-.demo-legend-row,
-.demo-kv-strip,
-.demo-kv-state,
-.demo-state {
+.demo-legend-row {
   color: var(--muted);
 }
 
@@ -119,9 +114,7 @@ html.pd-lock {
 .pd-metrics,
 .pd-steps,
 .demo-stages,
-.demo-log,
-.demo-kv-lanes,
-.demo-kv-log {
+.demo-log {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1037,9 +1030,7 @@ input.demo-input {
 .demo-status,
 .demo-row,
 .demo-chips,
-.demo-kv-bar,
 .demo-legend-row,
-.demo-kv-head,
 .demo-lane {
   display: flex;
   flex-wrap: wrap;
@@ -1320,8 +1311,7 @@ input.demo-input {
   overflow-x: auto;
 }
 
-.demo-log,
-.demo-kv-log {
+.demo-log {
   overflow: auto;
   padding: .5rem .75rem;
   font: .8rem/1.6 var(--mono);
@@ -1722,8 +1712,7 @@ input.demo-input {
 
 .demo-rl>*,
 .demo-rl-viz>*,
-.demo-rl-controls>*,
-.demo-kv>* {
+.demo-rl-controls>* {
   min-width: 0;
 }
 
@@ -1978,86 +1967,72 @@ input.demo-input {
   }
 }
 
-.demo-kv-bar {
-  justify-content: space-between;
-  gap: .75rem;
-  margin-bottom: 1rem;
-}
-
-.demo-kv-strip {
-  margin: 0 0 1rem;
-  font: 500 .75rem var(--mono);
-  letter-spacing: .06em;
-}
-
-.demo-kv {
-  position: relative;
-  display: grid;
-  gap: 1rem;
-}
-
-.demo-kv-wires {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-
-.demo-kv-wires line {
-  stroke: var(--border-strong);
-  stroke-width: 1;
-}
-
-:is(.demo-kv-wires circle, .demo-wire i).req {
-  fill: var(--accent);
-  background: var(--accent);
-}
-
-:is(.demo-kv-wires circle, .demo-wire i).res {
-  fill: var(--text);
-  background: var(--text);
-}
-
-.demo-kv-clients,
-.demo-kv-clients>div,
-.demo-kv-server,
-.demo-kv-logwrap {
+.demo-kv-console {
   display: grid;
   gap: .75rem;
-  align-content: start;
 }
 
-:is(.demo-kv-clients, .demo-kv-client, .demo-kv-server)>.project-link {
-  justify-self: start;
+.demo-kv-console>* {
+  min-width: 0;
 }
 
-.demo-kv-client {
-  position: relative;
+.demo-kv-transcript {
   display: grid;
   gap: .6rem;
-  min-width: 0;
+  align-content: start;
+  list-style: none;
+  min-height: 4rem;
+  max-height: 20rem;
   margin: 0;
-  padding: .75rem 1rem 1rem;
+  padding: .5rem .75rem;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font: .8rem/1.6 var(--mono);
 }
 
-.demo-kv-client>legend {
-  padding: 0 .35rem;
+.demo-kv-transcript:empty::before {
+  content: "Replies appear here.";
+  color: var(--muted);
 }
 
-.demo-kv-state {
+.demo-kv-entry {
+  display: grid;
+  gap: .1rem;
+}
+
+.demo-kv-cmd {
   margin: 0;
-  font: .78rem var(--mono);
   overflow-wrap: anywhere;
 }
 
-.demo-kv-state[data-s="connected"] {
+.demo-kv-cmd::before {
+  content: "> ";
+  content: "> " / "";
   color: var(--accent);
 }
 
-.demo-kv-state[data-s="waiting"] {
-  color: var(--signal-wait);
+.demo-kv-reply {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.demo-kv-mark::before {
+  content: attr(data-mark);
+  color: var(--muted);
+}
+
+.demo-kv-note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.demo-kv-ended {
+  display: flex;
 }
 
 .demo-kv-form {
@@ -2071,88 +2046,12 @@ input.demo-input {
   min-width: 0;
 }
 
-.demo-kv-out {
-  min-height: 1.6em;
-  margin: 0;
-  font: .78rem/1.6 var(--mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  tab-size: 4;
-}
-
-.demo-kv-head {
-  justify-content: space-between;
-  gap: .5rem;
-  font-family: var(--mono);
-}
-
 .demo-lane {
   position: relative;
   justify-content: space-between;
   gap: .35rem .5rem;
   padding: .5rem .6rem;
   font: .78rem var(--mono);
-}
-
-.demo-kv-lanes {
-  display: grid;
-  gap: .4rem;
-}
-
-.demo-state {
-  padding: .15rem .5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  font-size: .72rem;
-}
-
-.demo-state:is(.is-parse, .is-send, .is-start) {
-  color: var(--text);
-}
-
-.demo-state.is-wait {
-  color: var(--signal-wait);
-  border: 1px dashed var(--signal-wait);
-}
-
-.demo-state.is-hold {
-  color: var(--accent);
-  background: var(--accent-halo);
-  border-color: transparent;
-}
-
-.demo-state.is-save {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.demo-state.is-closed {
-  text-decoration: line-through;
-}
-
-.demo-wire {
-  display: none;
-  position: relative;
-  flex: 1 0 100%;
-  height: 6px;
-}
-
-.demo-wire::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  border-top: 1px solid var(--border-strong);
-}
-
-.demo-wire i {
-  position: absolute;
-  top: 0;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  border-radius: 50%;
 }
 
 .demo-kv-table {
@@ -2194,67 +2093,472 @@ input.demo-input {
   transition: none;
 }
 
-.demo-kv-logwrap .demo-row {
-  justify-content: space-between;
+.demo-kv-layout {
+  display: grid;
+  gap: 1rem;
 }
 
-.demo-kv-log {
-  max-height: 240px;
-  font-size: .75rem;
-  overflow-wrap: anywhere;
-}
-
-.demo-kv-log .is-note {
-  color: var(--muted);
-}
-
-@media (max-width: 767.98px) {
-  .demo-kv-wires {
-    display: none;
-  }
-
-  .demo-wire {
-    display: block;
-  }
-
-  .demo-kv-server {
-    order: 1;
-  }
-
-  .demo-kv-logwrap {
-    order: 2;
-  }
-}
-
-@media (min-width: 768px) {
-  .demo-kv-strip {
-    display: none;
-  }
-
-  .demo-kv {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-    column-gap: 2rem;
-  }
-
-  .demo-kv-logwrap {
-    grid-column: 1 / -1;
-  }
-
-  .demo-kv-log {
-    max-height: 20rem;
-  }
+.demo-kv-layout>* {
+  min-width: 0;
 }
 
 @media (min-width: 1024px) {
-  .demo-kv {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
+  .demo-kv-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
   }
+}
 
-  .demo-kv-logwrap {
-    grid-column: auto;
-  }
+.demo-kv-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem .75rem;
+}
 
-  .demo-kv-log {
-    max-height: 34rem;
-  }
+.demo-kv-inspect {
+  display: grid;
+  gap: 1rem;
+}
+
+.demo-kv-inspect>* {
+  min-width: 0;
+}
+
+.demo-kv-panel,
+.demo-kv-diag {
+  display: grid;
+  gap: .6rem;
+  align-content: start;
+  padding: .75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.demo-kv-h,
+.demo-kv-sub {
+  margin: 0;
+  font: 500 .85rem var(--mono);
+}
+
+.demo-kv-sub {
+  font-size: .78rem;
+  color: var(--muted);
+}
+
+.demo-kv-table tr.is-changed {
+  background: var(--accent-halo);
+}
+
+.demo-kv-tag {
+  display: block;
+  color: var(--accent);
+  font-size: .72rem;
+}
+
+.demo-kv-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .25rem .75rem;
+  margin: 0;
+  font: .75rem/1.5 var(--mono);
+}
+
+.demo-kv-facts dt {
+  color: var(--muted);
+}
+
+.demo-kv-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.demo-kv-panel .demo-kv-file {
+  margin: 0;
+  padding: .5rem;
+  max-height: 12rem;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font: .75rem/1.5 var(--mono);
+  tab-size: 4;
+}
+
+.demo-kv-changed {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--accent);
+  font: .78rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+p.demo-kv-changed {
+  color: var(--muted);
+}
+
+.demo-kv-scroll {
+  max-height: 26rem;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.demo-kv-events,
+.demo-kv-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demo-kv-events:empty::before {
+  content: "Events appear here.";
+  padding: .5rem .75rem;
+  color: var(--muted);
+  font: .78rem var(--mono);
+}
+
+.demo-kv-group {
+  display: grid;
+  gap: .35rem;
+  padding: .5rem .75rem;
+  border-top: 1px solid var(--border);
+}
+
+.demo-kv-group:first-child {
+  border-top: 0;
+}
+
+.demo-kv-group.is-divider {
+  border-top: 2px solid var(--border-strong);
+}
+
+.demo-kv-group.is-divider>.demo-kv-sub {
+  color: var(--signal-wait);
+}
+
+.demo-kv-group .demo-kv-sub {
+  overflow-wrap: anywhere;
+}
+
+.demo-kv-readgroup {
+  display: grid;
+  gap: .25rem;
+  padding-left: .6rem;
+  border-left: 2px solid var(--border-strong);
+}
+
+.demo-kv-event {
+  font: .75rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.demo-mount .demo-kv-event details>summary {
+  padding: .25rem 0;
+  min-height: 1.75rem;
+  font: inherit;
+}
+
+.demo-kv-seq {
+  color: var(--muted);
+}
+
+.demo-kv-type {
+  color: var(--accent);
+}
+
+.demo-kv-dur {
+  display: block;
+  color: var(--muted);
+}
+
+.demo-kv-scroll[data-view="store"] [data-lock],
+.demo-kv-scroll[data-view="store"] .demo-kv-readgroup,
+.demo-kv-scroll[data-view="locks"] .demo-kv-event:not([data-lock]) {
+  display: none;
+}
+
+.demo-kv-raw {
+  margin: .25rem 0 .5rem;
+  padding: .5rem;
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font: .72rem/1.5 var(--mono);
+}
+
+.demo-kv-diag {
+  padding-block: 0;
+}
+
+.demo-kv-diag[open] {
+  padding-bottom: .75rem;
+}
+
+.demo-kv-panel .demo-kv-file.is-flash {
+  background: var(--accent-halo);
+}
+
+/* Recordings of real native runs: one lane per recorded thread, one mark per event at its index (not by time). */
+.demo-kv-rec {
+  display: grid;
+  gap: .75rem;
+  min-width: 0;
+  margin-top: 1rem;
+  padding: .75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.demo-kv-rec>* {
+  min-width: 0;
+}
+
+.demo-kv-badge {
+  display: inline-block;
+  margin-left: .5rem;
+  padding: .1rem .5rem;
+  border: 1px solid var(--signal-wait);
+  border-radius: var(--radius-pill);
+  color: var(--signal-wait);
+  font: .7rem/1.5 var(--mono);
+  vertical-align: middle;
+}
+
+.demo-kv-notes {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.demo-kv-recview {
+  display: grid;
+  gap: .75rem;
+}
+
+.demo-kv-recview>* {
+  min-width: 0;
+}
+
+.demo-kv-recbar,
+.demo-kv-playwrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.demo-kv-pos {
+  font: .75rem/1.5 var(--mono);
+  color: var(--muted);
+}
+
+.demo-kv-lanes {
+  --step: .75rem;
+  --name: 11rem;
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.demo-kv-lanes-inner {
+  position: relative;
+  min-width: 100%;
+  width: calc(var(--name) + var(--n, 0) * var(--step));
+}
+
+.demo-kv-ruler {
+  position: relative;
+  height: 1.25rem;
+}
+
+.demo-kv-ruler-mark {
+  position: absolute;
+  left: calc(var(--name) + var(--i) * var(--step));
+  padding-left: .25rem;
+  color: var(--signal-wait);
+  font: .7rem/1.25rem var(--mono);
+  white-space: nowrap;
+}
+
+.demo-kv-lane {
+  display: flex;
+  border-top: 1px solid var(--border);
+}
+
+.demo-kv-lane-name {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--name);
+  padding: .25rem .5rem;
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  font: .72rem/1.5rem var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-kv-lane.is-current .demo-kv-lane-name {
+  color: var(--accent);
+}
+
+.demo-kv-track {
+  position: relative;
+  flex: none;
+  width: calc(var(--n, 0) * var(--step));
+  height: 2rem;
+}
+
+.demo-kv-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--i) * var(--step));
+  z-index: 2;
+  width: var(--step);
+  cursor: pointer;
+}
+
+.demo-kv-tick::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: .3rem;
+  height: .3rem;
+  margin: -.15rem 0 0 -.15rem;
+  border-radius: 50%;
+  background: var(--control-border);
+}
+
+.demo-kv-tick.is-lock::before {
+  background: var(--accent);
+}
+
+.demo-kv-tick.is-current::before {
+  width: .6rem;
+  height: .6rem;
+  margin: -.3rem 0 0 -.3rem;
+  background: var(--text);
+}
+
+.demo-kv-span {
+  position: absolute;
+  top: .5rem;
+  left: calc(var(--i) * var(--step));
+  z-index: 1;
+  box-sizing: border-box;
+  width: calc(var(--len) * var(--step));
+  height: 1rem;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.demo-kv-span.is-hold {
+  background: var(--accent-halo);
+  border: 1px solid var(--accent);
+}
+
+.demo-kv-span.is-wait {
+  border: 1px dashed var(--signal-wait);
+}
+
+.demo-kv-span.is-contended {
+  background: var(--signal-bad-halo);
+  border-color: var(--signal-wait);
+}
+
+.demo-kv-span.is-wait.is-contended {
+  border-style: solid;
+}
+
+.demo-kv-span.is-open {
+  border-right-style: dotted;
+}
+
+.demo-kv-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--name) + (var(--i) + .5) * var(--step) - 1px);
+  z-index: 2;
+  width: 2px;
+  background: var(--text);
+  opacity: .5;
+  pointer-events: none;
+}
+
+.demo-kv-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--name) + var(--i) * var(--step));
+  border-left: 1px dashed var(--signal-wait);
+  pointer-events: none;
+}
+
+.demo-kv-recdetail {
+  display: grid;
+  gap: .4rem;
+  min-width: 0;
+}
+
+.demo-kv-recdetail p,
+.demo-kv-durs {
+  margin: 0;
+}
+
+.demo-kv-recsum {
+  font: .8rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.demo-kv-divider-note {
+  color: var(--signal-wait);
+  font: .8rem/1.5 var(--mono);
+}
+
+.demo-kv-durs {
+  padding: 0;
+  list-style: none;
+  font: .75rem/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.demo-kv-client {
+  display: grid;
+  gap: .4rem;
+}
+
+.demo-kv-client>* {
+  min-width: 0;
+  margin: 0;
+}
+
+.demo-kv-clientlog {
+  max-height: 16rem;
+  margin: 0;
+  padding: .5rem .5rem .5rem 1.75rem;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  font: .75rem/1.5 var(--mono);
+}
+
+.demo-kv-clienttext {
+  overflow-wrap: anywhere;
 }

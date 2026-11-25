@@ -12,3 +12,7 @@ tools/test/fixtures/ratelimit-parity/** -text
 scripts/demos/iqg-py/** -text
 tools/test/fixtures/iqg-parity/** -text
 static/demo/iqg/** -text
+# The KV demo's vendored sources and recordings and its parity scripts and goldens are checked byte for byte against
+# scripts/demos/kv-py/kv.manifest.json, so core.autocrlf must never convert them.
+scripts/demos/kv-py/** -text
+tools/test/fixtures/kv-parity/** -text

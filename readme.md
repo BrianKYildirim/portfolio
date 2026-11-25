@@ -88,7 +88,11 @@ portfolio/
 │       ├── iqg-worker.js
 │       ├── iqg-py/                 # Pinned image-quality-gate Python sources, wheels and their manifest
 │       ├── kv.js
-│       └── kv-core.js
+│       ├── kv-pyodide.js
+│       ├── kv-worker.js
+│       ├── kv-events.js
+│       ├── kv-timeline.js
+│       └── kv-py/                  # Pinned key-value-storage Python sources, parity set, recordings and their manifest
 ├── styles/
 │   ├── main.css                    # Global styles and responsive layout
 │   └── project-detail.css          # Project panel and demo styles

@@ -1,0 +1,215 @@
+{
+ "schema": "pyodide-exact-manifest/1",
+ "name": "kv",
+ "repo": "key-value-storage",
+ "sha": "9405892c8b008d782678634d3afd96d1170a0ac9",
+ "source": {
+  "tree_url": "https://github.com/BrianKYildirim/key-value-storage/tree/9405892c8b008d782678634d3afd96d1170a0ac9",
+  "entry": "server.py"
+ },
+ "pyodide": {
+  "version": "314.0.7",
+  "cdn_base": "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/",
+  "python": "3.14.2",
+  "files": {
+   "pyodide-lock.json": {
+    "bytes": 119077,
+    "sha256": "5dc2fc119108bc148c7457dc86e7675b5c87e1cafd420b9c34c1eaef7b36c010"
+   },
+   "pyodide.asm.mjs": {
+    "bytes": 1250344,
+    "sha256": "f7cdc8ece80678ceb712f8e65ebe6d3a83203a180c399865f49612a051693635"
+   },
+   "pyodide.asm.wasm": {
+    "bytes": 9598218,
+    "sha256": "cc36e3cab04fdfc9a63ff13eb52eae2b911bf46c025cc7b281f394bd3de1d5e6"
+   },
+   "pyodide.mjs": {
+    "bytes": 17931,
+    "sha256": "6f1d60f7bf529beb300f0f47983c921d3982363640ba20af0e38efdddbc66109"
+   },
+   "python_stdlib.zip": {
+    "bytes": 2545637,
+    "sha256": "fa1957e5777068fc4f7437f96d860ae2fbe9c19732ba06c84e004ec16dd7dd7a"
+   }
+  }
+ },
+ "packages": [],
+ "sources": {
+  "dir": "scripts/demos/kv-py",
+  "files": {
+   "observability.py": {
+    "bytes": 59408,
+    "sha256": "5a9176f8d519a9073cec08db728f5044c41b580d1896e30f23ef9f1b79eb397e"
+   },
+   "server.py": {
+    "bytes": 25951,
+    "sha256": "005a74cdc7894ef11e4034a028c9707de57e403e7e2e808380b521e8bc4ed579"
+   }
+  }
+ },
+ "parity": {
+  "mode": "exact",
+  "dir": "tools/test/fixtures/kv-parity",
+  "source_path": "tests/parity",
+  "excluded_keys": [
+   "duration_ns",
+   "hold_ns",
+   "hold_ns_max",
+   "hold_ns_mean",
+   "hold_ns_total",
+   "latency_ns",
+   "mono_ns",
+   "mtime_ns",
+   "owner_thread_id",
+   "pid",
+   "save_ns_max",
+   "save_ns_total",
+   "send_ns",
+   "thread_id",
+   "ts_ns",
+   "wait_ns",
+   "wait_ns_max",
+   "wait_ns_mean",
+   "wait_ns_total"
+  ],
+  "excluded_paths": [
+   "state.store.memory_bytes.value"
+  ],
+  "files": {
+   "golden/edges.json": {
+    "bytes": 92299,
+    "sha256": "01f224837ff6441e5064c8abda9ff73e9af1398536543448a0443d344578e8e8"
+   },
+   "golden/empty.json": {
+    "bytes": 35081,
+    "sha256": "61e9b5156931687445d8e709f95680891f6ad07f17f59285c2bd81ead8f2611d"
+   },
+   "golden/golden_session.json": {
+    "bytes": 200534,
+    "sha256": "40579a9ec7937a3258628025a732818989fc6e9fe7869145bd987e2d5e5ab207"
+   },
+   "golden/meta.json": {
+    "bytes": 1130,
+    "sha256": "5b484231b4ff0cbb52481089054a0f447a71a457539fe4d1fa69279f4b44c279"
+   },
+   "golden/restart.json": {
+    "bytes": 61096,
+    "sha256": "877c1469f6bec7edf3befc89fdee78155db4247fe465704eb1d74253e4e5fd91"
+   },
+   "scripts/edges.json": {
+    "bytes": 3763,
+    "sha256": "fc86307f9169022cd14f280aed75bdab3c8d3f5c1d0ae7cc7ab2b1836cd8881b"
+   },
+   "scripts/empty.json": {
+    "bytes": 193,
+    "sha256": "9a79f891573eed57529adc08a956779a98f5e4211b6213e1cd0a0f2a63d404d1"
+   },
+   "scripts/golden_session.json": {
+    "bytes": 1093,
+    "sha256": "647587297c025d0e87a06c5ff95997ef9b68efc3d6b3eaa62e790f32ff26cb49"
+   },
+   "scripts/restart.json": {
+    "bytes": 294,
+    "sha256": "d4cb844196e0ca1224eed3eec67031e86eaf4f5fccbb5c508a113127dc268d0f"
+   }
+  }
+ },
+ "recordings": {
+  "dir": "scripts/demos/kv-py/recordings",
+  "scenarios": {
+   "backlog": {
+    "label": "More clients than --max-connections allows",
+    "upstream_dir": "bench/recordings/2026-11-20-3e49009/ubuntu-wsl2/backlog",
+    "source_sha": "3e49009158512efe1afd61842e21da02a89b3449",
+    "files": {
+     "meta.json": {
+      "bytes": 3505,
+      "sha256": "ec94ef30bb4d4db1542118cda11ca51048d797bf093553b36c37fedf9ef7746f"
+     },
+     "raw/clients.jsonl": {
+      "bytes": 1037,
+      "sha256": "cadfa63379940f4bf282cde712123df84a9a843189a5da9f85955a5db8c02c1a"
+     },
+     "raw/trace.jsonl": {
+      "bytes": 8953,
+      "sha256": "b7392c61355e70c6ad91ce32c51f13b37facaaad6064b6636d6232f945de0dc6"
+     }
+    }
+   },
+   "contention": {
+    "label": "Several clients write at once",
+    "upstream_dir": "bench/recordings/2026-11-20-3e49009/ubuntu-wsl2/contention",
+    "source_sha": "3e49009158512efe1afd61842e21da02a89b3449",
+    "files": {
+     "meta.json": {
+      "bytes": 3574,
+      "sha256": "fbb32c267771a6d58b6d64ec5fed002377a917867e4f51bdb0a4c9000edaa070"
+     },
+     "raw/clients.jsonl": {
+      "bytes": 23176,
+      "sha256": "573969dfa32ff97b3f8e3738d6bd1fce88cd8e034d6531478460a66b36609fde"
+     },
+     "raw/trace.jsonl": {
+      "bytes": 298554,
+      "sha256": "b4b3541d5b4bac70607bb14de3868fe7b010ed7585efc5e0bd114f8e0c904ed6"
+     }
+    }
+   },
+   "framing": {
+    "label": "How recv() splits a long message",
+    "upstream_dir": "bench/recordings/2026-11-20-3e49009/ubuntu-wsl2/framing",
+    "source_sha": "3e49009158512efe1afd61842e21da02a89b3449",
+    "files": {
+     "meta.json": {
+      "bytes": 4155,
+      "sha256": "8a6f35dfc1869db6b7c170c26ad1e4b0a05184b30d8c473ed556215145b9bd0a"
+     },
+     "raw/clients-merged.jsonl": {
+      "bytes": 701,
+      "sha256": "a020f68cb8adadc255f9be34593ffa69d9a3fd6b5da92f048912e94a98e73c9c"
+     },
+     "raw/clients.jsonl": {
+      "bytes": 8188,
+      "sha256": "62f908277b97d57035cc662f87e33c7acb5a353686ff265944ea6cfe9e32501f"
+     },
+     "raw/trace-merged.jsonl": {
+      "bytes": 3602,
+      "sha256": "b2a7103abb2d20b683e43ef04e63f24fd367c4be0d5f6c7f8b3f51e57a97e217"
+     },
+     "raw/trace.jsonl": {
+      "bytes": 41015,
+      "sha256": "a1c7383002e6c39e29dfe24c837f1d41437e1a195c67185de60e948d1ebb9bdf"
+     }
+    }
+   },
+   "shutdown": {
+    "label": "Stop with open connections, then reload",
+    "upstream_dir": "bench/recordings/2026-11-20-3e49009/ubuntu-wsl2/shutdown",
+    "source_sha": "3e49009158512efe1afd61842e21da02a89b3449",
+    "files": {
+     "meta.json": {
+      "bytes": 3790,
+      "sha256": "b89ffb3db155e97d17c3176700b1485bf8c27062affa1b6fe78efc0ccf4cd27e"
+     },
+     "raw/clients.jsonl": {
+      "bytes": 1209,
+      "sha256": "ef5db52d94cf6857ea504fb521fa0e6a20745da8f26ed0bef3b95a7d61987130"
+     },
+     "raw/trace-run-a.jsonl": {
+      "bytes": 5587,
+      "sha256": "b920219b3be6bf49088c11936911d694094e2f2ee2df36239866411289382bda"
+     },
+     "raw/trace-run-b.jsonl": {
+      "bytes": 5279,
+      "sha256": "c3b8b8db9a051918574b6285225440dc7466c9f68a7c43ea4d0c68676ecff9bf"
+     }
+    }
+   }
+  }
+ },
+ "native": {
+  "environment": "ubuntu-wsl2",
+  "python": "3.11.18"
+ }
+}
